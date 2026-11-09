@@ -1,11 +1,9 @@
 /**
- * Auth calls.
+ * Auth calls to L5Fitness-api, which signs users in with Neon Auth.
  *
- * ⚠️ MOCK: these functions do not talk to a server yet. Any email + password works and
- * "Google" / "Apple" return a demo user, so the app flow can be built and tested now.
- * Replace the bodies with calls to L5Fitness-api when it is ready. Keep the same return type
- * and the rest of the app does not need to change.
+ * Email + password is live. Google and Apple are not set up yet (see the notes on each).
  */
+import { NetworkError, send } from '@/lib/http';
 
 export type AuthProvider = 'password' | 'google' | 'apple';
 
@@ -23,55 +21,61 @@ export type Session = {
 
 export class AuthError extends Error {}
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+type ApiUser = { id: string; name: string; email: string };
 
-function mockSession(user: Omit<User, 'id'>): Session {
-  return {
-    token: `mock-${Date.now().toString(36)}`,
-    user: { id: `u_${Date.now().toString(36)}`, ...user },
-  };
+async function startSession(path: string, body: unknown): Promise<Session> {
+  let result;
+  try {
+    result = await send<{ token: string; user: ApiUser }>(path, { method: 'POST', body });
+  } catch (e) {
+    throw new AuthError(e instanceof NetworkError ? e.message : 'Something went wrong. Please try again.');
+  }
+  const { status, data } = result;
+  if (status >= 200 && status < 300 && data?.token && data.user) {
+    const { id, name, email } = data.user;
+    return { token: data.token, user: { id, name, email, provider: 'password' } };
+  }
+  // The API's messages are written to be shown to the user as they are.
+  throw new AuthError(data?.error?.message ?? 'Something went wrong. Please try again.');
 }
 
-function nameFromEmail(email: string) {
-  const local = email.split('@')[0] ?? 'Athlete';
-  return local.charAt(0).toUpperCase() + local.slice(1);
+export function signInWithEmail(email: string, password: string): Promise<Session> {
+  return startSession('/auth/login', { email, password });
 }
 
-export async function signInWithEmail(email: string, password: string): Promise<Session> {
-  // TODO: POST /auth/login { email, password }
-  await delay(700);
-  if (!email || !password) throw new AuthError('Enter your email and password.');
-  return mockSession({ name: nameFromEmail(email), email, provider: 'password' });
+export function signUpWithEmail(name: string, email: string, password: string): Promise<Session> {
+  return startSession('/auth/register', { name, email, password });
 }
 
-export async function signUpWithEmail(
-  name: string,
-  email: string,
-  password: string
-): Promise<Session> {
-  // TODO: POST /auth/register { name, email, password }
-  await delay(900);
-  if (!name || !email || !password) throw new AuthError('Please fill in all fields.');
-  return mockSession({ name, email, provider: 'password' });
+/**
+ * Checks a saved session with the server.
+ *   'valid'   → still signed in
+ *   'invalid' → expired or signed out elsewhere: the app should log the user out
+ *   'unknown' → could not reach the server (offline): keep the saved session
+ */
+export async function checkSession(token: string): Promise<'valid' | 'invalid' | 'unknown'> {
+  try {
+    const { status } = await send('/auth/me', { token });
+    if (status === 200) return 'valid';
+    if (status === 401) return 'invalid';
+    return 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 export async function signInWithGoogle(): Promise<Session> {
-  // TODO: real Google sign-in needs Google Cloud OAuth client IDs (iOS, Android, web) and a
-  // development build. Get the Google ID token on the device, send it to
-  // POST /auth/google { idToken }, and the API verifies it and returns the session.
-  await delay(700);
-  return mockSession({ name: 'Google User', email: 'google.user@gmail.com', provider: 'google' });
+  // TODO: Neon Auth supports Google, but it needs your own Google OAuth client IDs (iOS,
+  // Android, web), a development build, and a browser sign-in flow that returns to the app.
+  throw new AuthError('Google sign-in is not available yet. Please use your email and password.');
 }
 
 export async function signInWithApple(): Promise<Session> {
-  // TODO: real Sign in with Apple uses `expo-apple-authentication` on iOS (needs an Apple
-  // Developer account and a development build). Send Apple's identityToken to
-  // POST /auth/apple { identityToken, fullName } and the API verifies it and returns the session.
-  // Android has no native Apple sign-in; it needs Apple's web flow (Services ID + redirect URL).
-  await delay(700);
-  return mockSession({ name: 'Apple User', email: 'apple.user@icloud.com', provider: 'apple' });
+  // TODO: Neon Auth supports Apple, but it needs an Apple Developer account (Services ID and
+  // .p8 key added to Neon Auth) and `expo-apple-authentication` in a development build.
+  throw new AuthError('Apple sign-in is not available yet. Please use your email and password.');
 }
 
-export async function signOutRemote(_token: string): Promise<void> {
-  // TODO: POST /auth/logout
+export async function signOutRemote(token: string): Promise<void> {
+  await send('/auth/logout', { method: 'POST', token });
 }
