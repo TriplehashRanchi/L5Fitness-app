@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "189281864438",
+    "project_id": "level5fitness",
+    "storage_bucket": "level5fitness.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:189281864438:android:c7d7fcf3fb96b5464efad7",
+        "android_client_info": {
+          "package_name": "com.level5fitness.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "189281864438-j447mkhnssnbohrlbod02q61g10d34cu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.level5fitness.app",
+            "certificate_hash": "05a023c5f2aa4591b7ed505e77066049888b6a20"
+          }
+        },
+        {
+          "client_id": "189281864438-rdf6v0rgr8hq15idgd69ajn2uo3vuq4r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAehfsF8mUIsYLsBZ22gC9QwEc_Ys62lO8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "189281864438-rdf6v0rgr8hq15idgd69ajn2uo3vuq4r.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

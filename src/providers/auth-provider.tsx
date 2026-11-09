@@ -1,11 +1,13 @@
+import { onAuthStateChanged } from 'firebase/auth';
 import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 
 import * as api from '@/lib/auth-api';
-import { setAuthToken, setSessionEndedHandler } from '@/lib/http';
-import { clearActiveWorkout, clearSession, loadSession, saveSession } from '@/lib/storage';
+import { auth } from '@/lib/firebase';
+import { setSessionEndedHandler, setTokenProvider } from '@/lib/http';
+import { clearActiveWorkout } from '@/lib/storage';
 
 type AuthContextValue = {
-  /** false until the saved session is read from storage */
+  /** false until Firebase has said whether someone is signed in (instant, read from the phone) */
   isReady: boolean;
   /** Onboarding is shown on every app start while logged out. Reset on each launch. */
   hasOnboarded: boolean;
@@ -25,41 +27,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hasOnboarded, setHasOnboarded] = useState(false);
   const [session, setSession] = useState<api.Session | null>(null);
 
-  /** Forget the session on this device (the server side is handled separately). */
-  const endSession = async () => {
-    setAuthToken(null);
-    await Promise.all([clearSession(), clearActiveWorkout()]);
-    setSession(null);
-  };
-
   useEffect(() => {
-    let cancelled = false;
-    loadSession().then(async (saved) => {
-      if (cancelled) return;
-      // Show the app straight away from the saved session; do not wait for the network.
-      setAuthToken(saved?.token ?? null); // before the screens render and start loading data
-      setSession(saved);
-      setIsReady(true);
-      if (!saved) return;
-      // Then confirm it with the server. Only an explicit "no longer valid" logs the user out,
-      // so being offline never does.
-      if ((await api.checkSession(saved.token)) === 'invalid' && !cancelled) await endSession();
-    });
-    // Any later call that the server rejects as "not signed in" also logs the user out.
+    // Firebase keeps the member signed in between launches and tells us whenever that changes:
+    // after login, after sign-out, and when the account is removed or disabled.
+    setTokenProvider(async () => (auth.currentUser ? auth.currentUser.getIdToken() : null));
+    // A request our API rejects as "not signed in" (e.g. the account was disabled) ends the session.
     setSessionEndedHandler(() => {
-      endSession();
+      api.signOutNow().catch(() => {});
+    });
+
+    const stop = onAuthStateChanged(auth, (user) => {
+      setSession(user ? { user: api.toUser(user) } : null);
+      // A workout in progress belongs to one member: never carry it over to the next one.
+      if (!user) clearActiveWorkout().catch(() => {});
+      setIsReady(true);
     });
     return () => {
-      cancelled = true;
+      stop();
+      setTokenProvider(null);
       setSessionEndedHandler(null);
     };
   }, []);
-
-  const startSession = async (next: api.Session) => {
-    await saveSession(next);
-    setAuthToken(next.token);
-    setSession(next);
-  };
 
   const value: AuthContextValue = {
     isReady,
@@ -68,15 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     completeOnboarding: async () => {
       setHasOnboarded(true);
     },
-    signIn: async (email, password) => startSession(await api.signInWithEmail(email, password)),
-    signUp: async (name, email, password) =>
-      startSession(await api.signUpWithEmail(name, email, password)),
-    signInWithGoogle: async () => startSession(await api.signInWithGoogle()),
-    signInWithApple: async () => startSession(await api.signInWithApple()),
-    signOut: async () => {
-      if (session) await api.signOutRemote(session.token).catch(() => {});
-      await endSession();
-    },
+    signIn: (email, password) => api.signInWithEmail(email, password),
+    signUp: (name, email, password) => api.signUpWithEmail(name, email, password),
+    signInWithGoogle: () => api.signInWithGoogle(),
+    signInWithApple: () => api.signInWithApple(),
+    signOut: () => api.signOutNow(),
   };
 
   return <AuthContext value={value}>{children}</AuthContext>;

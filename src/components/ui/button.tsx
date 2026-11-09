@@ -53,7 +53,7 @@ export function Button({
       accessibilityState={{ disabled: !!inactive, busy: !!loading }}
       disabled={inactive}
       onPress={onPress}
-      className={`h-14 flex-row items-center justify-center gap-3 rounded-full px-7 active:opacity-80 ${
+      className={`h-14 flex-row items-center justify-center gap-3 rounded-2xl px-7 active:opacity-80 ${
         CONTAINER[variant]
       } ${inactive ? 'opacity-60' : ''} ${className}`}>
       {loading ? (

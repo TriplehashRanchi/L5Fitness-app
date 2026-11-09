@@ -1,12 +1,11 @@
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
-import { Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { categoryIcon, iconFor } from '@/constants/icons';
-import { BottomTabInset } from '@/constants/theme';
 import {
   LEVEL_LABEL,
   listCategories,
@@ -17,20 +16,14 @@ import {
 import { messageFrom } from '@/lib/http';
 
 const BRAND = '#c6f432';
-const INK = '#0b0b0d';
-const MUTED = '#8b8b94';
-const WEB_TOP_BAR = 72;
+const MUTED = '#9ba2ac';
 
 /** Tile colours for the category grid, in order. */
-const TILE_STYLE = [
-  { bg: 'bg-brand', fg: INK },
-  { bg: 'bg-accent', fg: '#ffffff' },
-  { bg: 'bg-violet-400', fg: INK },
-  { bg: 'bg-sky-400', fg: INK },
-];
+const TILE_STYLE = [{ bg: 'bg-card', fg: BRAND }];
 
 export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [workouts, setWorkouts] = useState<Workout[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -56,7 +49,6 @@ export default function ExploreScreen() {
     }, [])
   );
 
-  const isWeb = Platform.OS === 'web';
   const q = query.trim().toLowerCase();
   const categoryName = (slug: string) => categories.find((c) => c.slug === slug)?.name ?? '';
   const all = workouts ?? [];
@@ -78,17 +70,26 @@ export default function ExploreScreen() {
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingTop: insets.top + (isWeb ? WEB_TOP_BAR : 12),
-          paddingBottom: insets.bottom + (isWeb ? 0 : BottomTabInset) + 24,
+          paddingTop: insets.top + 16,
+          width: '100%', maxWidth: 840, alignSelf: 'center',
+          paddingBottom: insets.bottom + 24,
           paddingLeft: insets.left,
           paddingRight: insets.right,
         }}>
         <View className="px-5">
-          <Text className="text-sm font-semibold uppercase tracking-[3px] text-brand">Explore</Text>
-          <Text className="mt-1 text-3xl font-black text-white">Find your workout</Text>
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            className="mb-4 h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-70">
+            <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={16} tintColor="white" />
+          </Pressable>
+          <Text accessibilityRole="header" className="text-[30px] font-bold tracking-tight text-white">Find your workout</Text>
+          <Text className="mt-2 text-sm leading-5 text-muted">A little movement. A stronger you.</Text>
 
           {/* Search */}
-          <View className="mt-5 h-14 flex-row items-center gap-3 rounded-full border border-white/10 bg-card px-5">
+          <View className="mt-5 h-14 flex-row items-center gap-3 rounded-2xl border border-white/10 bg-card px-5">
             <SymbolView
               name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }}
               size={18}
@@ -98,9 +99,10 @@ export default function ExploreScreen() {
               value={query}
               onChangeText={setQuery}
               placeholder="Search workouts, muscles…"
-              placeholderTextColor="#5c5c66"
+              placeholderTextColor="#7c8592"
               selectionColor={BRAND}
               cursorColor={BRAND}
+              accessibilityLabel="Search workouts"
               returnKeyType="search"
               autoCorrect={false}
               maxFontSizeMultiplier={1.4}
@@ -140,18 +142,17 @@ export default function ExploreScreen() {
                     onPress={() => setQuery(c.name)}
                     accessibilityRole="button"
                     accessibilityLabel={`${c.name}, ${c.count} ${c.count === 1 ? 'workout' : 'workouts'}`}
-                    className={`w-[48.5%] overflow-hidden rounded-3xl p-4 active:opacity-80 ${bg}`}
-                    style={{ aspectRatio: 1.25 }}>
-                    <View className="absolute -bottom-6 -right-6 h-24 w-24 rounded-full bg-black/10" />
-                    <SymbolView name={categoryIcon(c.slug)} size={28} tintColor={fg} />
-                    <View className="mt-auto">
+                    className={`w-[48.5%] overflow-hidden rounded-2xl border border-white/5 p-4 active:opacity-80 ${bg}`}
+                    style={{ minHeight: 132 }}>
+                    <SymbolView name={categoryIcon(c.slug)} size={24} tintColor={fg} />
+                    <View className="mt-5">
                       <Text
                         maxFontSizeMultiplier={1.3}
-                        className="text-lg font-black"
-                        style={{ color: fg }}>
+                        className="text-base font-semibold"
+                        style={{ color: '#ffffff' }}>
                         {c.name}
                       </Text>
-                      <Text maxFontSizeMultiplier={1.3} className="text-xs font-semibold" style={{ color: fg, opacity: 0.7 }}>
+                      <Text maxFontSizeMultiplier={1.3} className="text-xs font-semibold" style={{ color: MUTED }}>
                         {c.count} {c.count === 1 ? 'workout' : 'workouts'}
                       </Text>
                     </View>

@@ -29,13 +29,13 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
       <Text maxFontSizeMultiplier={1.4} className="pl-1 text-sm font-semibold text-white/80">
         {label}
       </Text>
-      <View className={`h-14 flex-row items-center gap-3 rounded-full border bg-card px-5 ${border}`}>
-        <SymbolView name={icon} size={18} tintColor={focused ? '#c6f432' : '#8b8b94'} />
+      <View className={`h-14 flex-row items-center gap-3 rounded-2xl border bg-card px-5 ${border}`}>
+        <SymbolView name={icon} size={18} tintColor={focused ? '#c6f432' : '#9ba2ac'} />
         <TextInput
           ref={ref}
           {...input}
           secureTextEntry={secure ? hidden : input.secureTextEntry}
-          placeholderTextColor="#5c5c66"
+          placeholderTextColor="#7c8592"
           selectionColor="#c6f432"
           cursorColor="#c6f432"
           maxFontSizeMultiplier={1.4}
@@ -62,7 +62,7 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
                   : { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' }
               }
               size={18}
-              tintColor="#8b8b94"
+              tintColor="#9ba2ac"
             />
           </Pressable>
         ) : null}
