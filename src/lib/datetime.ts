@@ -167,3 +167,14 @@ export function getGreeting(hour: number) {
 export function msUntilNextMinute(now: Date) {
   return 60_000 - (now.getTime() % 60_000) + 50;
 }
+
+/** "Today", "Yesterday", or "Mon 3 Nov" for a YYYY-MM-DD day key, in the member's language. */
+export function dayLabel(key: string, todayKey: string, locale: string): string {
+  if (key === todayKey) return 'Today';
+  const [y, m, d] = todayKey.split('-').map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+  if (key === yesterday) return 'Yesterday';
+  return getFormatter(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+    new Date(`${key}T00:00:00Z`)
+  );
+}

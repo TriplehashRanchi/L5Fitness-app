@@ -7,7 +7,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "l5fitnessapp",
     "userInterfaceStyle": "dark",
-    "ios": {},
+    "ios": {
+      "infoPlist": {}
+    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#C6F432",
@@ -18,7 +20,9 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.health.READ_STEPS"
-      ]
+      ],
+      "package": "com.level5fitness.app",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "server",
@@ -52,12 +56,32 @@
           "NSHealthUpdateUsageDescription": "L5 Fitness does not save anything to Apple Health.",
           "background": false
         }
+      ],
+      "react-native-nitro-google-signin",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "L5 Fitness uses your photos so you can add pictures of your meals.",
+          "cameraPermission": "L5 Fitness uses your camera so you can take pictures of your meals.",
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-    "backgroundColor": "#0B0B0D"
+    "backgroundColor": "#0B0B0D",
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "ae2a7cc1-2aaf-4b48-865a-e848aa92e0a3"
+      }
+    },
+    "owner": "gautampandit"
   }
 }

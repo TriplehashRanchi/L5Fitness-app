@@ -3,7 +3,6 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   RefreshControl,
@@ -11,8 +10,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
+import { MealsSection } from '@/components/meals-section';
+import { WaterCard } from '@/components/water-card';
 import { StepsCard } from '@/components/steps-card';
 import { iconFor, type IconName } from '@/constants/icons';
 import { BottomTabInset } from '@/constants/theme';
@@ -22,7 +25,6 @@ import {
   formatLongDate,
   formatTime,
   formatWeekday,
-  getGreeting,
   getWeekDays,
   getZonedParts,
   isSameDay,
@@ -31,8 +33,11 @@ import {
   type FormatOptions,
 } from '@/lib/datetime';
 import {
+  addWater,
   bookClass,
   cancelBooking,
+  deleteMeal,
+  undoWater,
   LEVEL_LABEL,
   logWorkout,
   type GymClass,
@@ -45,10 +50,10 @@ import {
   type ActiveWorkout,
 } from '@/lib/storage';
 import { useAuth } from '@/providers/auth-provider';
+import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
 
 const BRAND = '#c6f432';
 const INK = '#0b0b0d';
-const MUTED = '#8b8b94';
 
 /** The gym's own time zone. Class times are set in this zone. */
 const GYM_TIME_ZONE = 'Asia/Kolkata';
@@ -70,8 +75,8 @@ const STAT_STYLE: { icon: IconName; color: string }[] = [
   { icon: { ios: 'heart.fill', android: 'favorite', web: 'favorite' }, color: '#ff4d6d' },
 ];
 
-/** Card colours for the programs row, in order. */
-const PROGRAM_BG = ['bg-brand', 'bg-accent', 'bg-violet-400'];
+/** Subtle surfaces keep the catalog secondary to the daily workout. */
+const PROGRAM_BG = ['bg-brand/10', 'bg-card-2', 'bg-brand/5'];
 
 /** If "Finish" is pressed much later (the member forgot), count at most this long. */
 const MAX_WORKOUT_MIN = 240;
@@ -83,14 +88,14 @@ function Icon({ name, color, size = 20 }: { name: IconName; color: string; size?
   return <SymbolView name={name} tintColor={color} size={size} />;
 }
 
-function SectionHeader({ title, action }: { title: string; action?: string }) {
+function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return (
     <View className="mb-4 flex-row items-center justify-between gap-3 px-5">
       <Text className="flex-1 text-xl font-bold text-white" numberOfLines={1}>
         {title}
       </Text>
       {action ? (
-        <Pressable hitSlop={8} className="active:opacity-60">
+        <Pressable hitSlop={8} onPress={onAction} className="active:opacity-60">
           <Text {...COMPACT_TEXT} className="text-sm font-semibold text-brand">
             {action}
           </Text>
@@ -196,22 +201,11 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { now, format, firstWeekday } = useDeviceClock();
   const [category, setCategory] = useState('all');
-  const { session, signOut } = useAuth();
+  const router = useRouter();
+  const { session } = useAuth();
   const userId = session?.user.id;
   const userName = session?.user.name ?? 'Athlete';
-  const initials =
-    userName
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w[0]?.toUpperCase())
-      .join('') || 'L5';
-
-  const onAvatarPress = () =>
-    Alert.alert(userName, session?.user.email, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => signOut() },
-    ]);
+  const onAvatarPress = () => router.navigate('/profile');
 
   // Everything "today" is computed in the phone's time zone.
   const nowParts = getZonedParts(now, format.timeZone);
@@ -233,8 +227,8 @@ export default function HomeScreen() {
   const stats = [
     { label: 'Calories', unit: 'kcal', value: data ? String(data.stats.calories) : '–' },
     { label: 'Workout', unit: 'min', value: data ? String(data.stats.minutes) : '–' },
-    // Stays "–" until a heart-rate device is connected: the phone alone cannot measure it.
-    { label: 'Heart', unit: 'bpm', value: data?.stats.avgHeartRate != null ? String(data.stats.avgHeartRate) : '–' },
+    // Show heart rate only when a connected device has supplied a reading.
+    ...(data?.stats.avgHeartRate != null ? [{ label: 'Heart rate', unit: 'bpm', value: String(data.stats.avgHeartRate) }] : []),
   ];
 
   /** Which button is waiting on the server: 'workout' or a class id. */
@@ -321,6 +315,40 @@ export default function HomeScreen() {
     }
   };
 
+  // Water: the total moves at once and is then confirmed by the server's own number.
+  const today_key = toDayKey(today);
+  const changeWater = async (run: () => Promise<NonNullable<typeof data>['water']>, optimisticMl: number) => {
+    setBusy('water');
+    setNotice(null);
+    setData((prev) =>
+      prev ? { ...prev, water: { ...prev.water, totalMl: Math.max(0, prev.water.totalMl + optimisticMl) } } : prev
+    );
+    try {
+      const next = await run();
+      setData((prev) => (prev ? { ...prev, water: next } : prev));
+    } catch (e) {
+      setNotice(messageFrom(e));
+      reload(); // show the real total again
+    } finally {
+      setBusy(null);
+    }
+  };
+  const onAddWater = (ml: number) => changeWater(() => addWater(ml, today_key), ml);
+  const onUndoWater = () => {
+    const last = data?.water.lastId;
+    if (last) changeWater(() => undoWater(last, today_key), 0);
+  };
+
+  const onDeleteMeal = async (id: string) => {
+    try {
+      await deleteMeal(id);
+      setData((prev) => (prev ? { ...prev, meals: prev.meals.filter((m) => m.id !== id) } : prev));
+    } catch (e) {
+      setNotice(messageFrom(e));
+      reload();
+    }
+  };
+
   const message = notice ?? error;
 
   const isWeb = Platform.OS === 'web';
@@ -336,6 +364,7 @@ export default function HomeScreen() {
         className="flex-1"
         contentContainerStyle={{
           paddingTop: topPadding,
+          width: '100%', maxWidth: 840, alignSelf: 'center',
           paddingBottom: bottomPadding,
           paddingLeft: insets.left,
           paddingRight: insets.right,
@@ -351,35 +380,17 @@ export default function HomeScreen() {
           />
         }
         showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View className="flex-row items-center justify-between gap-3 px-5 pb-6">
-          <View className="flex-1 flex-row items-center gap-3">
-            <Pressable
-              onPress={onAvatarPress}
-              accessibilityRole="button"
-              accessibilityLabel="Account"
-              className="h-12 w-12 items-center justify-center rounded-full bg-brand active:opacity-80">
-              <Text {...COMPACT_TEXT} className="text-lg font-black text-ink">
-                {initials}
-              </Text>
-            </Pressable>
-            <View className="flex-1">
-              <Text className="text-sm text-muted" numberOfLines={1}>
-                {formatLongDate(now, format)}
-              </Text>
-              <Text className="text-lg font-bold text-white" numberOfLines={1}>
-                {getGreeting(nowParts.hour)}, {userName.split(' ')[0]} 👋
-              </Text>
-            </View>
+        <View className="flex-row items-center justify-between gap-4 px-5 pb-7 pt-3">
+          <View className="flex-1">
+            <Text className="text-sm text-muted" accessibilityLabel={formatLongDate(now, format)}>
+              {formatWeekday(today, format.locale, 'long')}, {today.day}
+            </Text>
+            <Text className="mt-2 text-[28px] font-bold tracking-tight text-white" numberOfLines={2}>
+              Let’s move, {userName.trim().split(/\s+/)[0]}.
+            </Text>
           </View>
-          <Pressable
-            accessibilityLabel="Notifications"
-            className="h-11 w-11 items-center justify-center rounded-full bg-card active:opacity-70">
-            <Icon
-              name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }}
-              color="white"
-            />
-            <View className="absolute right-3 top-3 h-2 w-2 rounded-full bg-accent" />
+          <Pressable onPress={onAvatarPress} accessibilityRole="button" accessibilityLabel="Open your profile" className="rounded-full border border-white/10 p-1 active:opacity-80">
+            <Avatar name={userName} image={session?.user.image} />
           </Pressable>
         </View>
 
@@ -394,22 +405,29 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {/* Hero: today's workout */}
-        <View className="mx-5 overflow-hidden rounded-3xl bg-brand p-6">
-          <View className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-brand-dark opacity-60" />
-          <View className="absolute -bottom-16 right-10 h-32 w-32 rounded-full bg-white opacity-20" />
+        {/* Today's steps and the week, from Apple Health / Health Connect */}
+        <StepsCard
+          now={now}
+          locale={format.locale}
+          days={week}
+          today={today}
+          goal={data?.settings.stepGoal ?? DAILY_STEP_GOAL}
+        />
 
-          <View className="mb-3 self-start rounded-full bg-ink px-3 py-1">
+        {/* Hero: today's workout */}
+        <View className="mx-5 overflow-hidden rounded-3xl border border-brand/20 bg-card p-6">
+
+          <View className="mb-4 self-start rounded-full bg-brand/10 px-3 py-1.5">
             <Text
               {...COMPACT_TEXT}
               className="text-xs font-bold uppercase tracking-widest text-brand">
               {active ? 'In progress' : <>{formatWeekday(today, format.locale, 'long')}&apos;s plan</>}
             </Text>
           </View>
-          <Text className="text-3xl font-black leading-tight text-ink">
+          <Text className="text-[28px] font-bold leading-9 tracking-tight text-white">
             {active?.title ?? plan?.title ?? (loading ? 'Loading…' : 'Rest day')}
           </Text>
-          <Text className="mt-2 text-sm font-medium text-ink/70">
+          <Text className="mt-2 text-sm leading-6 text-muted">
             {active && activeStart
               ? `Started ${formatTime(activeStart, format)} · ${elapsedMin} min so far`
               : plan
@@ -431,11 +449,11 @@ export default function HomeScreen() {
                 onPress={active ? finishWorkout : startWorkout}
                 disabled={busy === 'workout' || (!active && !plan)}
                 accessibilityRole="button"
-                className={`flex-row items-center gap-2 rounded-full bg-ink px-5 py-3 active:opacity-80 ${
+                className={`flex-row items-center gap-2 rounded-2xl bg-brand px-6 py-3.5 active:opacity-80 ${
                   !active && !plan ? 'opacity-40' : ''
                 }`}>
                 {busy === 'workout' ? (
-                  <ActivityIndicator color={BRAND} size="small" />
+                  <ActivityIndicator color={INK} size="small" />
                 ) : (
                   <Icon
                     name={
@@ -443,27 +461,27 @@ export default function HomeScreen() {
                         ? { ios: 'checkmark', android: 'check', web: 'check' }
                         : { ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }
                     }
-                    color={BRAND}
+                    color={INK}
                     size={16}
                   />
                 )}
-                <Text {...COMPACT_TEXT} className="font-bold text-white">
+                <Text {...COMPACT_TEXT} className="font-bold text-ink">
                   {active ? 'Finish workout' : 'Start workout'}
                 </Text>
               </Pressable>
               {active && busy !== 'workout' ? (
                 <Pressable onPress={discardWorkout} hitSlop={10} accessibilityRole="button">
-                  <Text {...COMPACT_TEXT} className="text-sm font-semibold text-ink/70 underline">
+                  <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted underline">
                     Cancel
                   </Text>
                 </Pressable>
               ) : null}
             </View>
             <View className="items-end">
-              <Text {...COMPACT_TEXT} className="text-2xl font-black text-ink">
+              <Text {...COMPACT_TEXT} className="text-2xl font-bold text-white">
                 {data ? `${data.week.percent}%` : '–'}
               </Text>
-              <Text {...COMPACT_TEXT} className="text-xs font-semibold text-ink/60">
+              <Text {...COMPACT_TEXT} className="text-xs text-muted">
                 weekly goal
               </Text>
             </View>
@@ -473,8 +491,8 @@ export default function HomeScreen() {
         {/* Stats */}
         <View className="mt-5 flex-row gap-3 px-5">
           {stats.map((s, i) => (
-            <View key={s.label} className="flex-1 rounded-2xl bg-card p-4">
-              <View className="mb-3 h-9 w-9 items-center justify-center rounded-xl bg-card-2">
+            <View key={s.label} className="flex-1 rounded-2xl border border-white/5 bg-card p-4">
+              <View className="mb-3 h-7 w-7 items-center justify-center">
                 <Icon name={STAT_STYLE[i].icon} color={STAT_STYLE[i].color} size={18} />
               </View>
               <View className="flex-row items-baseline gap-1">
@@ -496,14 +514,14 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Steps from Apple Health / Health Connect */}
-        <StepsCard now={now} locale={format.locale} />
+        <View className="mb-4 mt-8"><SectionHeader title="Daily activity" /></View>
+        <WaterCard water={data?.water ?? null} busy={busy === 'water'} onAdd={onAddWater} onUndo={onUndoWater} />
 
         {/* Weekly streak: real current week, starting on the phone's first day of week */}
-        <View className="mx-5 mt-5 rounded-3xl bg-card p-5">
+        <View className="mx-5 mt-1 rounded-3xl border border-white/5 bg-card p-5">
           <View className="mb-4 flex-row items-center justify-between">
             <View className="flex-1">
-              <Text className="text-base font-bold text-white">This week 🔥</Text>
+              <Text className="text-base font-bold text-white">Workout streak</Text>
               <Text className="text-xs text-muted">
                 {doneThisWeek} of {weeklyGoal} workouts done
               </Text>
@@ -552,9 +570,12 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Meals with photos */}
+        <MealsSection meals={data?.meals ?? null} format={format} onDelete={onDeleteMeal} />
+
         {/* Categories + programs */}
         <View className="mt-8">
-          <SectionHeader title="Programs" action="See all" />
+          <SectionHeader title="Programs" action="See all" onAction={() => router.push('/explore')} />
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -584,10 +605,13 @@ export default function HomeScreen() {
             {programs.map((p, i) => (
               <Pressable
                 key={p.id}
-                className="w-60 overflow-hidden rounded-3xl bg-card active:opacity-80">
+                onPress={() => router.push('/explore')}
+                accessibilityRole="button"
+                accessibilityLabel={`Explore ${p.title}`}
+                className="w-56 overflow-hidden rounded-3xl border border-white/5 bg-card active:opacity-80">
                 <View
-                  className={`h-32 items-center justify-center ${PROGRAM_BG[i % PROGRAM_BG.length]}`}>
-                  <Icon name={iconFor(p.icon)} color={INK} size={56} />
+                  className={`h-24 items-center justify-center ${PROGRAM_BG[i % PROGRAM_BG.length]}`}>
+                  <Icon name={iconFor(p.icon)} color={BRAND} size={36} />
                   <View className="absolute left-3 top-3 rounded-full bg-ink/80 px-2.5 py-1">
                     <Text {...COMPACT_TEXT} className="text-[10px] font-bold uppercase text-white">
                       {LEVEL_LABEL[p.level]}
@@ -617,7 +641,7 @@ export default function HomeScreen() {
 
         {/* Classes today */}
         <View className="mt-8">
-          <SectionHeader title="Classes today" action="Schedule" />
+          <SectionHeader title="Classes today" />
           <View className="gap-3 px-5">
             {classes.map((c) => (
               <ClassRow
@@ -635,27 +659,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Membership CTA */}
-        <Pressable className="mx-5 mt-8 flex-row items-center gap-4 rounded-3xl border border-brand/30 bg-card p-5 active:opacity-80">
-          <View className="h-14 w-14 items-center justify-center rounded-2xl bg-accent">
-            <Icon
-              name={{ ios: 'crown.fill', android: 'workspace_premium', web: 'workspace_premium' }}
-              color="white"
-              size={26}
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-base font-bold text-white">Go L5 Premium</Text>
-            <Text className="text-xs text-muted">
-              Personal trainer, diet plans & unlimited classes
-            </Text>
-          </View>
-          <Icon
-            name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
-            color={MUTED}
-            size={16}
-          />
-        </Pressable>
       </ScrollView>
 
       {/* Solid strip behind the status bar / notch so scrolled content never sits under the clock */}

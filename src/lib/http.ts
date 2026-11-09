@@ -5,8 +5,35 @@
  * secrets live on the server and must never be added to this app.
  */
 
-// Must be written exactly as process.env.EXPO_PUBLIC_… for Expo to inline it.
-const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+import Constants from 'expo-constants';
+
+/**
+ * The API's address. Set EXPO_PUBLIC_API_URL (written exactly like this for Expo to inline it).
+ *
+ * While developing, a phone cannot use "localhost" (that is the phone itself), and the Mac's
+ * Wi-Fi address changes between networks. So when the setting points at this computer
+ * (localhost or a home-network address), the host is replaced by the computer that is serving
+ * the app right now, keeping the same port. Real https addresses are used as they are.
+ */
+function resolveApiUrl() {
+  const configured = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+  if (!__DEV__) return configured;
+  try {
+    const url = new URL(configured);
+    const local = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url.hostname);
+    const metroHost = Constants.expoConfig?.hostUri?.split(':')[0];
+    const isAddress = !!metroHost && /^\d{1,3}(\.\d{1,3}){3}$/.test(metroHost);
+    if (local && isAddress) {
+      url.hostname = metroHost;
+      return url.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // not a valid address: used as it is below
+  }
+  return configured;
+}
+
+export const API_URL = resolveApiUrl();
 const TIMEOUT_MS = 15_000;
 
 /** The server answered with an error. `message` is written to be shown to the user as it is. */
@@ -55,8 +82,13 @@ export async function send<T>(
       // not JSON: leave data as null
     }
     return { status: res.status, data };
-  } catch {
-    throw new NetworkError("Can't reach the server. Check your internet connection and try again.");
+  } catch (e) {
+    // Developers get the real details; members get the plain sentence.
+    if (__DEV__) console.warn(`[api] ${options.method ?? 'GET'} ${API_URL}${path} failed:`, (e as Error).message);
+    throw new NetworkError(
+      "Can't reach the server. Check your internet connection and try again." +
+        (__DEV__ ? `\n\n(Developer note: the app tried ${API_URL}. Open that address plus /health in the phone's browser.)` : '')
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -64,12 +96,15 @@ export async function send<T>(
 
 // ── Signed-in calls ──────────────────────────────────────────────────────────────────────────
 
-let authToken: string | null = null;
+let tokenProvider: (() => Promise<string | null>) | null = null;
 let onSessionEnded: (() => void) | null = null;
 
-/** Called by the auth provider whenever the user signs in or out. */
-export function setAuthToken(token: string | null) {
-  authToken = token;
+/**
+ * Called once by the auth provider. Returns a fresh Firebase token for the signed-in member
+ * (Firebase renews it by itself when it is about to expire), or null when nobody is signed in.
+ */
+export function setTokenProvider(provider: (() => Promise<string | null>) | null) {
+  tokenProvider = provider;
 }
 
 /** Called by the auth provider: what to do when the server says the session is over. */
@@ -79,7 +114,14 @@ export function setSessionEndedHandler(handler: (() => void) | null) {
 
 /** A call as the signed-in user. Returns the body, or throws ApiError / NetworkError. */
 export async function api<T>(path: string, options: Omit<Options, 'token'> = {}): Promise<T> {
-  const { status, data } = await send<T>(path, { ...options, token: authToken });
+  let token: string | null = null;
+  try {
+    token = (await tokenProvider?.()) ?? null;
+  } catch {
+    // The token could not be renewed, which in practice means there is no connection.
+    throw new NetworkError("Can't reach the server. Check your internet connection and try again.");
+  }
+  const { status, data } = await send<T>(path, { ...options, token });
   if (status >= 200 && status < 300) return data as T;
   if (status === 401) onSessionEnded?.();
   throw new ApiError(

@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/button';
 import { TextField } from '@/components/ui/text-field';
-import { AuthError } from '@/lib/auth-api';
+import { AuthCancelled, AuthError } from '@/lib/auth-api';
 import { useAuth } from '@/providers/auth-provider';
 
 type Mode = 'login' | 'signup';
@@ -93,9 +93,11 @@ export default function LoginScreen() {
       await action();
       // On success the root layout switches to the app automatically.
     } catch (e) {
+      setBusy(null);
+      // Closing the Google sheet is a change of mind, not a failure: no pop-up.
+      if (e instanceof AuthCancelled) return;
       const message = e instanceof AuthError ? e.message : 'Something went wrong. Please try again.';
       Alert.alert(isSignup ? 'Sign up failed' : 'Login failed', message);
-      setBusy(null);
     }
   };
 
