@@ -38,3 +38,29 @@ export function saveSession(session: Session) {
 export function clearSession() {
   return secure.remove(SESSION_KEY);
 }
+
+// ── Workout in progress ──────────────────────────────────────────────────────────────────────
+// Saved on the device so a workout keeps running if the app is closed or the phone restarts.
+
+export type ActiveWorkout = { userId: string; workoutId: string; title: string; startedAt: string };
+
+const ACTIVE_WORKOUT_KEY = 'l5.activeWorkout';
+
+export async function loadActiveWorkout(userId: string): Promise<ActiveWorkout | null> {
+  try {
+    const raw = await secure.get(ACTIVE_WORKOUT_KEY);
+    const saved = raw ? (JSON.parse(raw) as ActiveWorkout) : null;
+    // Never show one member's workout to another member on a shared phone.
+    return saved?.userId === userId ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveActiveWorkout(workout: ActiveWorkout) {
+  return secure.set(ACTIVE_WORKOUT_KEY, JSON.stringify(workout));
+}
+
+export function clearActiveWorkout() {
+  return secure.remove(ACTIVE_WORKOUT_KEY);
+}
