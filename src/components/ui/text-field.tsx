@@ -22,22 +22,22 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(true);
 
-  const border = error ? 'border-red-400' : focused ? 'border-brand' : 'border-white/10';
+  const border = error ? 'border-red-400' : focused ? 'border-[#3ddc68]' : 'border-[#78ffa0]/20';
 
   return (
     <View className="gap-2">
       <Text maxFontSizeMultiplier={1.4} className="pl-1 text-sm font-semibold text-white/80">
         {label}
       </Text>
-      <View className={`h-14 flex-row items-center gap-3 rounded-2xl border bg-card px-5 ${border}`}>
-        <SymbolView name={icon} size={18} tintColor={focused ? '#c6f432' : '#9ba2ac'} />
+      <View className={`h-14 flex-row items-center gap-3 rounded-xl border bg-[#0b1a11] px-5 ${border}`}>
+        <SymbolView name={icon} size={18} tintColor={focused ? '#3ddc68' : '#8fa396'} />
         <TextInput
           ref={ref}
           {...input}
           secureTextEntry={secure ? hidden : input.secureTextEntry}
           placeholderTextColor="#7c8592"
-          selectionColor="#c6f432"
-          cursorColor="#c6f432"
+          selectionColor="#3ddc68"
+          cursorColor="#3ddc68"
           maxFontSizeMultiplier={1.4}
           onFocus={(e) => {
             setFocused(true);

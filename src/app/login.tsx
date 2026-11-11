@@ -1,3 +1,4 @@
+import { Exo2_900Black, useFonts } from '@expo-google-fonts/exo-2';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -8,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
   type TextInputInstance,
@@ -23,7 +23,11 @@ import { useAuth } from '@/providers/auth-provider';
 type Mode = 'login' | 'signup';
 type Errors = Partial<Record<'name' | 'email' | 'password', string>>;
 
-const INK = '#0b0b0d';
+// Same palette as onboarding.
+const BRAND = '#3ddc68';
+const DIVIDER = 'rgba(255,255,255,0.12)';
+/** Wide, heavy sport display face, same as the onboarding headline. */
+const DISPLAY = 'Exo2_900Black';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD = 8;
 
@@ -69,6 +73,8 @@ function AppleMark() {
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
+  // Never block the screen on the font: it shows right away and the headline font swaps in once loaded.
+  const [fontsLoaded] = useFonts({ Exo2_900Black });
 
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
@@ -117,8 +123,20 @@ export default function LoginScreen() {
     Alert.alert('Reset password', 'Password reset will be available soon. Please contact the gym desk.');
 
   return (
-    <View className="flex-1 bg-ink">
+    <View className="flex-1" style={{ backgroundColor: '#050a07' }}>
       <StatusBar style="light" />
+      {/* Background from the design reference: near-black with a soft green haze at the top and a fainter one at the bottom */}
+      <LinearGradient
+        colors={['rgba(46,120,68,0.32)', 'rgba(46,120,68,0.1)', 'rgba(46,120,68,0)']}
+        locations={[0, 0.5, 1]}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 420 }}
+        pointerEvents="none"
+      />
+      <LinearGradient
+        colors={['rgba(24,80,42,0)', 'rgba(24,80,42,0.28)']}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 300 }}
+        pointerEvents="none"
+      />
 
       {/* Expo apps are edge-to-edge on Android too, so both platforms need padding. */}
       <KeyboardAvoidingView className="flex-1" behavior="padding">
@@ -134,46 +152,23 @@ export default function LoginScreen() {
             paddingRight: insets.right,
           }}>
           {/* Header photo, fading into the background */}
-          <View className="h-80 overflow-hidden">
-            <Image
-              source={require('@/assets/onboarding/slide-1.jpg')}
-              contentFit="cover"
-              contentPosition={{ top: '18%' }}
-              style={StyleSheet.absoluteFill}
-              accessibilityIgnoresInvertColors
-            />
-            <LinearGradient
-              colors={['rgba(0,0,0,0.55)', 'rgba(11,11,13,0.25)', 'rgba(11,11,13,0.85)', INK]}
-              locations={[0, 0.35, 0.75, 1]}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-            <View className="flex-1 justify-between px-6 pb-2" style={{ paddingTop: insets.top + 8 }}>
-              <View className="flex-row items-center gap-2.5">
-                <View className="h-8 w-8 items-center justify-center rounded-[10px] bg-brand">
-                  <Text maxFontSizeMultiplier={1.1} className="text-[13px] font-black text-ink">
-                    L5
-                  </Text>
-                </View>
-                <Text
-                  maxFontSizeMultiplier={1.1}
-                  className="text-[13px] font-black tracking-[3px] text-white">
-                  FITNESS
-                </Text>
-              </View>
-              <View>
-                <Text maxFontSizeMultiplier={1.2} className="text-[34px] font-black leading-[40px] tracking-tight text-white">
-                  {isSignup ? 'Create your\n' : 'Welcome\n'}
-                  <Text className="text-brand">{isSignup ? 'account.' : 'back.'}</Text>
-                </Text>
-                <Text maxFontSizeMultiplier={1.3} className="mt-2 text-sm text-white/65">
-                  {isSignup ? 'Start your fitness journey today' : 'Log in to continue your training'}
-                </Text>
-              </View>
-            </View>
+          <View className="px-6" style={{ paddingTop: insets.top + 28 }}>
+            <Text
+              maxFontSizeMultiplier={1.1}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              style={fontsLoaded ? { fontFamily: DISPLAY } : { fontWeight: '900' }}
+              className="text-[40px] uppercase leading-[44px] text-white">
+              {isSignup ? 'Create your\n' : 'Welcome\n'}
+              <Text style={{ color: BRAND }}>{isSignup ? 'account.' : 'back.'}</Text>
+            </Text>
+            <Text maxFontSizeMultiplier={1.3} className="mt-3 text-[15px] text-white/70">
+              {isSignup ? 'Start your fitness journey today.' : 'Log in to continue your training.'}
+            </Text>
           </View>
 
-          <View className="flex-1 gap-5 px-6 pt-6">
+          <View className="flex-1 gap-5 px-6 pt-8">
             {/* Form */}
             <View className="gap-4">
               {isSignup ? (
@@ -227,7 +222,7 @@ export default function LoginScreen() {
               />
               {!isSignup ? (
                 <Pressable onPress={onForgot} hitSlop={8} className="self-end active:opacity-60">
-                  <Text maxFontSizeMultiplier={1.3} className="text-sm font-semibold text-brand">
+                  <Text maxFontSizeMultiplier={1.3} style={{ color: BRAND }} className="text-sm font-semibold">
                     Forgot password?
                   </Text>
                 </Pressable>
@@ -243,11 +238,11 @@ export default function LoginScreen() {
 
             {/* Divider */}
             <View className="flex-row items-center gap-3">
-              <View className="h-px flex-1 bg-white/10" />
+              <View style={{ backgroundColor: DIVIDER }} className="h-px flex-1" />
               <Text maxFontSizeMultiplier={1.3} className="text-xs text-muted">
                 or continue with
               </Text>
-              <View className="h-px flex-1 bg-white/10" />
+              <View style={{ backgroundColor: DIVIDER }} className="h-px flex-1" />
             </View>
 
             {/* Google + Apple side by side */}
@@ -279,7 +274,7 @@ export default function LoginScreen() {
                 {isSignup ? 'Already a member? ' : 'New to L5 Fitness? '}
               </Text>
               <Pressable onPress={() => switchMode(isSignup ? 'login' : 'signup')} hitSlop={8}>
-                <Text className="text-sm font-bold text-brand">{isSignup ? 'Log in' : 'Sign up'}</Text>
+                <Text style={{ color: BRAND }} className="text-sm font-bold">{isSignup ? 'Log in' : 'Sign up'}</Text>
               </Pressable>
             </View>
           </View>

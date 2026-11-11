@@ -65,7 +65,8 @@
           "cameraPermission": "L5 Fitness uses your camera so you can take pictures of your meals.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
