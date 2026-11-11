@@ -59,6 +59,14 @@
       ],
       "react-native-nitro-google-signin",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#c6f432",
+          "defaultChannel": "default"
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "L5 Fitness uses your photos so you can add pictures of your meals.",

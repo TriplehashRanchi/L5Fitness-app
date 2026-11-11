@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/avatar';
 import { ConfirmSheet } from '@/components/confirm-sheet';
 import { useSettings } from '@/hooks/use-settings';
+import { useNotifications } from '@/providers/notifications-provider';
 import { AuthError, deleteAccount } from '@/lib/auth-api';
 import { messageFrom } from '@/lib/http';
 import { formatWater } from '@/lib/water';
@@ -124,6 +125,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { session, signOut } = useAuth();
   const { settings, error, saving, change } = useSettings();
+  const push = useNotifications();
 
   const [confirm, setConfirm] = useState<'logout' | 'delete' | null>(null);
   const [busy, setBusy] = useState(false);
@@ -243,6 +245,35 @@ export default function SettingsScreen() {
               <ActivityIndicator color={BRAND} />
             </View>
           )}
+        </Section>
+
+        {/* Notifications */}
+        <Section title="Notifications">
+          <Row title="Inbox" value={push.unread > 0 ? `${push.unread} new` : 'All read'} onPress={() => router.push('/notifications' as never)} />
+          <Row
+            title="Phone alerts"
+            value={
+              push.status === 'denied'
+                ? 'Blocked. Tap to allow'
+                : push.status === 'unavailable'
+                  ? 'Not available in this build'
+                  : push.status === 'error'
+                    ? 'Could not set up. Tap to retry'
+                    : push.alertsOn
+                      ? 'On'
+                      : 'Off'
+            }
+            onPress={
+              push.status === 'denied'
+                ? () => Linking.openSettings().catch(() => setNotice('Could not open settings.'))
+                : push.status === 'error'
+                  ? () => void push.retry()
+                  : push.status === 'on'
+                    ? () => push.setAlerts(!push.alertsOn).catch(() => setNotice('Could not change that. Please try again.'))
+                    : undefined
+            }
+            last
+          />
         </Section>
 
         {/* Data */}

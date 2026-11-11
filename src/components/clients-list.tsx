@@ -112,7 +112,7 @@ export function ClientsList() {
             <View className="items-center rounded-3xl border border-white/10 bg-card px-6 py-10">
               <Text className="text-base font-bold text-white">{query ? 'No clients match' : 'No clients yet'}</Text>
               <Text className="mt-1 text-center text-sm text-muted">
-                {query ? 'Try another name or email.' : 'Members appear here after completing their fitness profile and choosing to share with you.'}
+                {query ? 'Try another name or email.' : 'Members appear here after completing their fitness profile and choosing to share, and the admin assigns them to you.'}
               </Text>
             </View>
           ) : null}
