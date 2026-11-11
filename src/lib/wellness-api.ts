@@ -19,7 +19,7 @@ export type BodyProfile = {
 };
 
 export type WeightEntry = { id: string; weightKg: number; day: string };
-export type Role = 'member' | 'dietitian';
+export type Role = 'member' | 'dietitian' | 'admin';
 
 export type ProfileState = {
   role: Role;

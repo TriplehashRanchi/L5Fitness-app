@@ -103,9 +103,9 @@ export default function ProfileScreen() {
           <View className="flex-1">
             <Text className="text-xl font-bold text-white" numberOfLines={1}>{user?.name}</Text>
             <Text {...COMPACT_TEXT} className="text-sm text-muted" numberOfLines={1}>{user?.email}</Text>
-            {role === 'dietitian' ? (
+            {role !== 'member' ? (
               <View className="mt-2 self-start rounded-full bg-brand px-3 py-1">
-                <Text {...COMPACT_TEXT} className="text-[11px] font-bold uppercase text-ink">Dietitian</Text>
+                <Text {...COMPACT_TEXT} className="text-[11px] font-bold uppercase text-ink">{role === 'admin' ? 'Admin' : 'Dietitian'}</Text>
               </View>
             ) : null}
           </View>

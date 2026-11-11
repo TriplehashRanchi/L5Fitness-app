@@ -29,8 +29,8 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 export default function DietScreen() {
   const { role } = useProfile();
-  // Dietitians do not have a plan of their own here: this tab is their client list.
-  return role === 'dietitian' ? <ClientsList /> : <MyDiet />;
+  // Dietitians and the admin do not have a plan of their own here: this tab is their client list.
+  return role === 'member' ? <MyDiet /> : <ClientsList />;
 }
 
 function MyDiet() {

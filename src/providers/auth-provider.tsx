@@ -4,6 +4,7 @@ import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 import * as api from '@/lib/auth-api';
 import { auth } from '@/lib/firebase';
 import { setSessionEndedHandler, setTokenProvider } from '@/lib/http';
+import { unregisterPush } from '@/lib/push';
 import { clearActiveWorkout } from '@/lib/storage';
 
 type AuthContextValue = {
@@ -60,7 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signUp: (name, email, password) => api.signUpWithEmail(name, email, password),
     signInWithGoogle: () => api.signInWithGoogle(),
     signInWithApple: () => api.signInWithApple(),
-    signOut: () => api.signOutNow(),
+    signOut: async () => {
+      // Stop alerts for this phone first: afterwards we can no longer talk to the server as this person.
+      await unregisterPush();
+      await api.signOutNow();
+    },
   };
 
   return <AuthContext value={value}>{children}</AuthContext>;

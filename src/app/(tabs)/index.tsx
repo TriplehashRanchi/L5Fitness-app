@@ -21,6 +21,7 @@ import { iconFor, type IconName } from '@/constants/icons';
 import { BottomTabInset } from '@/constants/theme';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { useHome } from '@/hooks/use-home';
+import { useNotifications } from '@/providers/notifications-provider';
 import {
   formatLongDate,
   formatTime,
@@ -205,6 +206,7 @@ export default function HomeScreen() {
   const { session } = useAuth();
   const userId = session?.user.id;
   const userName = session?.user.name ?? 'Athlete';
+  const { unread } = useNotifications();
   const onAvatarPress = () => router.navigate('/profile');
 
   // Everything "today" is computed in the phone's time zone.
@@ -389,9 +391,24 @@ export default function HomeScreen() {
               Let’s move, {userName.trim().split(/\s+/)[0]}.
             </Text>
           </View>
-          <Pressable onPress={onAvatarPress} accessibilityRole="button" accessibilityLabel="Open your profile" className="rounded-full border border-white/10 p-1 active:opacity-80">
-            <Avatar name={userName} image={session?.user.image} />
-          </Pressable>
+          <View className="flex-row items-center gap-3">
+            <Pressable
+              onPress={() => router.push('/notifications' as never)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+              className="h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-card active:opacity-80">
+              <SymbolView name={{ ios: 'bell.fill', android: 'notifications', web: 'notifications' }} tintColor="white" size={18} />
+              {unread > 0 ? (
+                <View className="absolute -right-0.5 -top-0.5 min-w-[18px] items-center rounded-full bg-brand px-1">
+                  <Text className="text-[11px] font-bold text-ink">{unread > 9 ? '9+' : unread}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable onPress={onAvatarPress} accessibilityRole="button" accessibilityLabel="Open your profile" className="rounded-full border border-white/10 p-1 active:opacity-80">
+              <Avatar name={userName} image={session?.user.image} />
+            </Pressable>
+          </View>
         </View>
 
         {message ? (

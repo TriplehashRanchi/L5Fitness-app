@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { SplashOverlay } from '@/components/splash-overlay';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
+import { NotificationsProvider } from '@/providers/notifications-provider';
 import { ProfileProvider, useProfile } from '@/providers/profile-provider';
 
 // Keep the native splash up until we know which screen to show (no flash of the wrong screen).
@@ -74,6 +75,7 @@ function RootNavigator() {
           <Stack.Protected guard={loggedIn && status === 'ready'}>
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} />
@@ -90,7 +92,9 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <ProfileProvider>
-        <RootNavigator />
+        <NotificationsProvider>
+          <RootNavigator />
+        </NotificationsProvider>
       </ProfileProvider>
     </AuthProvider>
   );
