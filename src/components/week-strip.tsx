@@ -4,7 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 import { formatWeekday, toDayKey, type CalendarDay } from '@/lib/datetime';
 import type { WeekDay } from '@/lib/wellness-api';
 
-const INK = '#0b0b0d';
+const INK = '#050a07';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 /**
@@ -52,7 +52,7 @@ export function WeekStrip({
             </Text>
             <View className="h-4 items-center justify-center">
               {complete ? (
-                <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} tintColor={isSelected ? INK : '#c6f432'} size={14} />
+                <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} tintColor={isSelected ? INK : '#3ddc68'} size={14} />
               ) : planned ? (
                 <View className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-ink' : 'bg-white/50'}`} />
               ) : null}

@@ -3,11 +3,11 @@ import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native';
 
 import { StepsRing } from '@/components/steps-ring';
-import { useSteps } from '@/hooks/use-steps';
+import type { useSteps } from '@/hooks/use-steps';
 import { formatWeekday, type CalendarDay } from '@/lib/datetime';
 import { compactSteps, goalPercent } from '@/lib/steps/summary';
 
-const BRAND = '#c6f432';
+const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const CHART_HEIGHT = 80;
 
@@ -19,7 +19,7 @@ function ActionButton({ title, onPress, busy }: { title: string; onPress: () => 
       accessibilityRole="button"
       className="min-w-[96px] items-center rounded-full bg-brand px-5 py-2.5 active:opacity-80">
       {busy ? (
-        <ActivityIndicator color="#0b0b0d" size="small" />
+        <ActivityIndicator color="#050a07" size="small" />
       ) : (
         <Text {...COMPACT_TEXT} className="text-sm font-bold text-ink">
           {title}
@@ -68,27 +68,21 @@ function ConnectPrompt({
  * Counts come from Apple Health (iOS) or Health Connect (Android) and stay on the phone.
  */
 export function StepsCard({
-  now,
+  steps: stepsState,
   locale,
   days,
-  today,
   goal,
 }: {
-  now: Date;
+  /** The 7 days of the week on screen, in order */
+  days: CalendarDay[];
+  /** The result of useSteps, read once by the Home screen so it can also refresh it */
+  steps: ReturnType<typeof useSteps>;
   locale: string;
   /** Daily step goal from Settings */
   goal: number;
-  /** The 7 days of the week on screen, in order */
-  days: CalendarDay[];
-  today: CalendarDay;
 }) {
   const [showWeek, setShowWeek] = useState(false);
-  const { status, week, todaySteps, asked, connecting, connect, openSettings, sourceName } = useSteps(
-    now,
-    days,
-    today,
-    goal
-  );
+  const { status, week, todaySteps, asked, connecting, connect, openSettings, sourceName } = stepsState;
   const number = (n: number) => n.toLocaleString(locale);
 
   if (status === 'loading') {
@@ -193,7 +187,7 @@ export function StepsCard({
         <Text {...COMPACT_TEXT} className="text-sm font-semibold text-white">Weekly activity</Text>
         <View className="flex-row items-center gap-2">
           <Text {...COMPACT_TEXT} className="text-xs text-muted">{number(week.total)} steps</Text>
-          <SymbolView name={showWeek ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor="#9ba2ac" size={14} />
+          <SymbolView name={showWeek ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor="#8fa396" size={14} />
         </View>
       </Pressable>
       {showWeek ? <>

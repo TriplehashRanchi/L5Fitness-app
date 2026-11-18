@@ -1,0 +1,58 @@
+import { Pressable, Text, View } from 'react-native';
+
+import { DisplayText } from '@/components/display-text';
+import { monthYear, WeekArrows } from '@/components/home-header';
+import { addDays, formatWeekday, getWeekDays, isSameDay, type CalendarDay } from '@/lib/datetime';
+
+const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
+
+/** Month row with the joined prev/next pill and a 7-day strip where tapping a day selects it. */
+export function WeekPicker({
+  selected,
+  today,
+  firstWeekday,
+  locale,
+  onSelect,
+}: {
+  selected: CalendarDay;
+  today: CalendarDay;
+  firstWeekday: number;
+  locale: string;
+  onSelect: (day: CalendarDay) => void;
+}) {
+  const days = getWeekDays(selected, firstWeekday);
+  return (
+    <View className="px-5">
+      <View className="mt-5 flex-row items-center justify-between">
+        <DisplayText {...COMPACT_TEXT} className="text-xl tracking-tight text-white" numberOfLines={1}>
+          {monthYear(days[3], locale)}
+        </DisplayText>
+        <WeekArrows onStep={(s) => onSelect(addDays(selected, s * 7))} />
+      </View>
+      <View className="mb-5 mt-5 flex-row">
+        {days.map((d) => {
+          const isSel = isSameDay(d, selected);
+          const isToday = isSameDay(d, today);
+          return (
+            <Pressable
+              key={`${d.year}-${d.month}-${d.day}`}
+              onPress={() => onSelect(d)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSel }}
+              accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${isToday ? ', today' : ''}`}
+              className="min-h-[44px] flex-1 items-center gap-2">
+              <Text {...COMPACT_TEXT} className={`text-sm font-semibold ${isSel ? 'text-white' : 'text-muted'}`}>
+                {formatWeekday(d, locale, 'narrow')}
+              </Text>
+              <View style={{ width: 42, height: 42, borderRadius: 21 }} className={`items-center justify-center ${isSel ? 'bg-brand' : ''}`}>
+                <Text {...COMPACT_TEXT} className={`text-base font-bold ${isSel ? 'text-ink' : isToday ? 'text-brand' : 'text-muted'}`}>
+                  {d.day}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}

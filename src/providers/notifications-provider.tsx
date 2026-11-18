@@ -16,13 +16,16 @@ type Value = {
   refresh: () => Promise<void>;
   setAlerts: (on: boolean) => Promise<void>;
   retry: () => Promise<void>;
+  /** The notifications panel (there is no notifications page). `anchored` = it hangs from the bell on Home. */
+  inbox: { open: boolean; anchored: boolean };
+  openInbox: (anchored?: boolean) => void;
+  closeInbox: () => void;
 };
 
 const Ctx = createContext<Value | null>(null);
 
-// The screen a message opens. Paths are the app's own routes.
-const ROUTES: Record<Screen, Href> = {
-  inbox: '/notifications' as Href,
+// The screen a message opens. Paths are the app's own routes. An "inbox" message opens the panel instead.
+const ROUTES: Record<Exclude<Screen, 'inbox'>, Href> = {
   home: '/' as Href,
   diet: '/diet' as Href,
   logs: '/logs' as Href,
@@ -37,6 +40,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [alertsOn, setAlertsOn] = useState(true);
   const [status, setStatus] = useState<PushStatus | 'checking'>('checking');
   const handled = useRef<string | null>(null);
+  const [inbox, setInbox] = useState({ open: false, anchored: false });
+  const openInbox = useCallback((anchored = false) => setInbox({ open: true, anchored }), []);
+  const closeInbox = useCallback(() => setInbox((i) => ({ ...i, open: false })), []);
 
   const refresh = useCallback(async () => {
     try {
@@ -50,7 +56,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   const retry = useCallback(async () => {
     setStatus('checking');
-    setStatus(await registerForPush());
+    setStatus(await registerForPush(true));
   }, []);
 
   // Sign in → ask permission, tell the server about this phone, load the unread count.
@@ -82,7 +88,9 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       if (handled.current === key) return;
       handled.current = key;
       if (data?.notificationId) markRead([data.notificationId]).then(refresh).catch(() => {});
-      router.navigate(ROUTES[data?.screen && data.screen in ROUTES ? data.screen : 'inbox']);
+      const screen = data?.screen;
+      if (screen && screen !== 'inbox' && screen in ROUTES) router.navigate(ROUTES[screen]);
+      else openInbox();
       N.clearLastNotificationResponseAsync().catch(() => {});
     };
 
@@ -96,7 +104,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       arrived.remove();
       renewed.remove();
     };
-  }, [signedIn, refresh]);
+  }, [signedIn, refresh, openInbox]);
 
   // Coming back to the app: the person may have changed the permission in the phone's settings.
   useEffect(() => {
@@ -121,8 +129,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 
   // Nobody signed in: show nothing (the numbers of the last person are never exposed).
   const value = useMemo(
-    () => ({ unread: signedIn ? unread : 0, status: signedIn ? status : ('checking' as const), alertsOn, refresh, setAlerts, retry }),
-    [signedIn, unread, status, alertsOn, refresh, setAlerts, retry]
+    () => ({ unread: signedIn ? unread : 0, status: signedIn ? status : ('checking' as const), alertsOn, refresh, setAlerts, retry, inbox: signedIn ? inbox : { open: false, anchored: false }, openInbox, closeInbox }),
+    [signedIn, unread, status, alertsOn, refresh, setAlerts, retry, inbox, openInbox, closeInbox]
   );
   return <Ctx value={value}>{children}</Ctx>;
 }

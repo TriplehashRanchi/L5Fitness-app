@@ -19,7 +19,7 @@ export default function AppTabs() {
               <TabButton>Home</TabButton>
             </TabTrigger>
             <TabTrigger name="logs" href="/logs" asChild>
-              <TabButton>Logs</TabButton>
+              <TabButton>Activity</TabButton>
             </TabTrigger>
             <TabTrigger name="diet" href="/diet" asChild>
               <TabButton>Diet</TabButton>

@@ -51,7 +51,7 @@ export function ConfirmSheet({
                 destructive ? 'bg-accent' : 'bg-brand'
               }`}>
               {busy ? (
-                <ActivityIndicator color={destructive ? '#ffffff' : '#0b0b0d'} />
+                <ActivityIndicator color={destructive ? '#ffffff' : '#050a07'} />
               ) : (
                 <Text
                   maxFontSizeMultiplier={1.3}

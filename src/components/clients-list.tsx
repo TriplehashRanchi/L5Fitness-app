@@ -1,4 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
+import { GreenBackground } from '@/components/green-background';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -12,7 +13,7 @@ import { fmtKg, GOAL_LABEL } from '@/lib/body';
 import { messageFrom } from '@/lib/http';
 import { listClients, type ClientSummary } from '@/lib/wellness-api';
 
-const BRAND = '#c6f432';
+const BRAND = '#3ddc68';
 const WEB_TOP_BAR = 72;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -55,6 +56,7 @@ export function ClientsList() {
 
   return (
     <View className="flex-1 bg-ink">
+      <GreenBackground />
       <StatusBar style="light" />
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -79,13 +81,13 @@ export function ClientsList() {
         <PageHeading title="Your clients" subtitle="Plans, progress and a little encouragement." />
         <View className="px-5">
           <View className="mt-5 h-14 flex-row items-center gap-3 rounded-2xl border border-white/10 bg-card px-5">
-            <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor="#9ba2ac" />
+            <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor="#8fa396" />
             <TextInput
               value={query}
               onChangeText={setQuery}
               accessibilityLabel="Search clients"
               placeholder="Search by name or email"
-              placeholderTextColor="#7c8592"
+              placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
               autoCapitalize="none"
@@ -112,7 +114,7 @@ export function ClientsList() {
             <View className="items-center rounded-3xl border border-white/10 bg-card px-6 py-10">
               <Text className="text-base font-bold text-white">{query ? 'No clients match' : 'No clients yet'}</Text>
               <Text className="mt-1 text-center text-sm text-muted">
-                {query ? 'Try another name or email.' : 'Members appear here after completing their fitness profile and choosing to share, and the admin assigns them to you.'}
+                {query ? 'Try another name or email.' : 'Your admin will assign clients to you. They will show up here.'}
               </Text>
             </View>
           ) : null}

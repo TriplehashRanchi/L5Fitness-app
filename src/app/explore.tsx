@@ -1,4 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
+import { DisplayText } from '@/components/display-text';
+import { GreenBackground } from '@/components/green-background';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useState } from 'react';
@@ -15,8 +17,8 @@ import {
 } from '@/lib/fitness-api';
 import { messageFrom } from '@/lib/http';
 
-const BRAND = '#c6f432';
-const MUTED = '#9ba2ac';
+const BRAND = '#3ddc68';
+const MUTED = '#8fa396';
 
 /** Tile colours for the category grid, in order. */
 const TILE_STYLE = [{ bg: 'bg-card', fg: BRAND }];
@@ -64,6 +66,7 @@ export default function ExploreScreen() {
 
   return (
     <View className="flex-1 bg-ink">
+      <GreenBackground />
       <StatusBar style="light" />
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -85,7 +88,7 @@ export default function ExploreScreen() {
             className="mb-4 h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-70">
             <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={16} tintColor="white" />
           </Pressable>
-          <Text accessibilityRole="header" className="text-[30px] font-bold tracking-tight text-white">Find your workout</Text>
+          <DisplayText accessibilityRole="header" className="text-[30px] font-bold tracking-tight text-white">Find your workout</DisplayText>
           <Text className="mt-2 text-sm leading-5 text-muted">A little movement. A stronger you.</Text>
 
           {/* Search */}
@@ -99,7 +102,7 @@ export default function ExploreScreen() {
               value={query}
               onChangeText={setQuery}
               placeholder="Search workouts, muscles…"
-              placeholderTextColor="#7c8592"
+              placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
               accessibilityLabel="Search workouts"

@@ -1,3 +1,4 @@
+import type { Workout, CoachingStatus } from '@/lib/fitness-api';
 /** Profile, weight, workout history, diet plans and the dietitian tools (all from L5Fitness-api). */
 import type { Activity, DietType, Goal, Sex } from '@/lib/body';
 import { api } from '@/lib/http';
@@ -75,6 +76,7 @@ export type DietItem = {
 export type WeekDay = { day: string; total: number; done: number };
 
 export type DietDay = {
+  coaching: CoachingStatus;
   day: string;
   items: DietItem[];
   summary: { total: number; done: number };
@@ -113,7 +115,7 @@ export type PlanDay = { day: string; items: DietItem[]; week: WeekDay[] };
 export type NewItem = { day: string; mealSlot: MealSlot; title: string; details?: string; calories?: number };
 
 export const listClients = (q: string) =>
-  api<{ clients: ClientSummary[] }>(`/dietitian/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+  api<{ clients: ClientSummary[]; requests: ClientRequest[] }>(`/dietitian/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`);
 export const getClient = (id: string) => api<ClientDetail>(`/dietitian/clients/${encodeURIComponent(id)}`);
 export const getClientPlan = (id: string, day: string, weekStart: string) =>
   api<PlanDay>(`/dietitian/clients/${encodeURIComponent(id)}/plan?day=${day}&weekStart=${weekStart}`);
@@ -122,3 +124,25 @@ export const addPlanItem = (id: string, item: NewItem) =>
 export const removePlanItem = (itemId: string) => api(`/dietitian/plan-items/${itemId}`, { method: 'DELETE' });
 export const copyPlanDay = (id: string, from: string, to: string) =>
   api<{ copied: number }>(`/dietitian/clients/${encodeURIComponent(id)}/plan/copy`, { method: 'POST', body: { from, to } });
+
+export type ClientRequest = { id: string; name: string; email: string; image: string | null };
+export const acceptClient = (id: string) => api(`/dietitian/clients/${encodeURIComponent(id)}/accept`, { method: 'POST' });
+export const getClientTraining = (id: string, day: string) => api<{ plan: Workout | null }>(`/dietitian/clients/${encodeURIComponent(id)}/training?day=${day}`);
+export type TrainingInput = { day: string; title: string; durationMin: number; kcal: number; instructions: string };
+export const saveClientTraining = (id: string, input: TrainingInput) => api(`/dietitian/clients/${encodeURIComponent(id)}/training`, { method: 'PUT', body: input });
+export const removeClientTraining = (id: string, day: string) => api(`/dietitian/clients/${encodeURIComponent(id)}/training?day=${day}`, { method: 'DELETE' });
+
+// ── Daily targets set by the dietitian (null = not set, the member chooses) ───────────────────
+
+export type ClientTargets = {
+  waterMl: number | null;
+  steps: number | null;
+  calories: number | null;
+  proteinG: number | null;
+  weeklyWorkouts: number | null;
+};
+
+export const getClientTargets = (id: string) =>
+  api<{ targets: ClientTargets }>(`/dietitian/clients/${encodeURIComponent(id)}/targets`);
+export const saveClientTargets = (id: string, targets: ClientTargets) =>
+  api<{ targets: ClientTargets }>(`/dietitian/clients/${encodeURIComponent(id)}/targets`, { method: 'PUT', body: { targets } });

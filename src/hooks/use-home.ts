@@ -1,6 +1,7 @@
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 
+import { useForegroundReload } from '@/hooks/use-foreground-reload';
 import { getHome, type Home } from '@/lib/fitness-api';
 import { messageFrom } from '@/lib/http';
 
@@ -34,6 +35,8 @@ export function useHome(today: string, weekStart: string) {
       load();
     }, [load])
   );
+
+  useForegroundReload(load);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);

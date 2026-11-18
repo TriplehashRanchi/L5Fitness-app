@@ -54,7 +54,7 @@ export function goalProgress(goal: Goal, start: number, current: number, target:
 export function goalRemaining(goal: Goal, current: number, target: number): string {
   if (goal === 'maintain') return Math.abs(current - target) <= 2 ? 'On target' : `${fmtKg(Math.abs(current - target))} from target`;
   const left = goal === 'lose' ? current - target : target - current;
-  if (left <= 0) return 'Goal reached 🎉';
+  if (left <= 0) return 'Goal reached';
   return `${fmtKg(left)} to ${goal === 'lose' ? 'lose' : 'gain'}`;
 }
 

@@ -35,7 +35,7 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
           ref={ref}
           {...input}
           secureTextEntry={secure ? hidden : input.secureTextEntry}
-          placeholderTextColor="#7c8592"
+          placeholderTextColor="#6f8577"
           selectionColor="#3ddc68"
           cursorColor="#3ddc68"
           maxFontSizeMultiplier={1.4}
@@ -62,7 +62,7 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
                   : { ios: 'eye.slash', android: 'visibility_off', web: 'visibility_off' }
               }
               size={18}
-              tintColor="#9ba2ac"
+              tintColor="#8fa396"
             />
           </Pressable>
         ) : null}

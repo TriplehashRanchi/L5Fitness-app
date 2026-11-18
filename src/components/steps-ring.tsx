@@ -4,7 +4,7 @@ const SIZE = 216;
 const STROKE = 12;
 const SEGMENTS = 72;
 const RADIUS = (SIZE - STROKE) / 2;
-const BRAND = '#c6f432';
+const BRAND = '#3ddc68';
 
 /** Native views keep the activity ring lightweight without another graphics dependency. */
 export function StepsRing({ steps, goal, locale }: { steps: number | null; goal: number; locale: string }) {
@@ -31,7 +31,7 @@ export function StepsRing({ steps, goal, locale }: { steps: number | null; goal:
               width: 7,
               height: STROKE,
               borderRadius: 3.5,
-              backgroundColor: index < filled ? BRAND : '#2b3238',
+              backgroundColor: index < filled ? BRAND : '#1d3a28',
               transform: [{ rotate: `${index * (360 / SEGMENTS)}deg` }],
             }}
           />

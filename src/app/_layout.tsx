@@ -4,6 +4,7 @@ import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
+import { NotificationsPanel } from '@/components/notifications-panel';
 import { SplashOverlay } from '@/components/splash-overlay';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { NotificationsProvider } from '@/providers/notifications-provider';
@@ -12,8 +13,8 @@ import { ProfileProvider, useProfile } from '@/providers/profile-provider';
 // Keep the native splash up until we know which screen to show (no flash of the wrong screen).
 SplashScreen.preventAutoHideAsync();
 
-const INK = '#0b0b0d';
-const BRAND = '#c6f432';
+const INK = '#050a07'; // = GREEN_BG
+const BRAND = '#3ddc68';
 
 const theme = {
   ...DarkTheme,
@@ -75,14 +76,17 @@ function RootNavigator() {
           <Stack.Protected guard={loggedIn && status === 'ready'}>
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="today-plan" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="steps" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="complete-profile" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           </Stack.Protected>
         </Stack>
       )}
+      {loggedIn && status === 'ready' ? <NotificationsPanel /> : null}
       <SplashOverlay />
     </ThemeProvider>
   );

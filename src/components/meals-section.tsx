@@ -8,8 +8,8 @@ import { ConfirmSheet } from '@/components/confirm-sheet';
 import { formatTime, type FormatOptions } from '@/lib/datetime';
 import { MEAL_LABEL, type Meal } from '@/lib/fitness-api';
 
-const BRAND = '#c6f432';
-const MUTED = '#9ba2ac';
+const BRAND = '#3ddc68';
+const MUTED = '#8fa396';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 /** Today's meals, each with its photo, and a button to add one. */
@@ -51,7 +51,7 @@ export function MealsSection({
           accessibilityRole="button"
           accessibilityLabel="Add a meal"
           className="flex-row items-center gap-1.5 rounded-full bg-brand px-4 py-2 active:opacity-80">
-          <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#0b0b0d" size={14} />
+          <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#050a07" size={14} />
           <Text {...COMPACT_TEXT} className="text-xs font-bold text-ink">
             Add meal
           </Text>

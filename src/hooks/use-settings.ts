@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getSettings, updateSettings, type Settings } from '@/lib/fitness-api';
-import { messageFrom } from '@/lib/http';
+import { getSettings, updateSettings, type Prescribed, type Settings } from '@/lib/fitness-api';
+import { ApiError, messageFrom } from '@/lib/http';
 
 /**
  * The member's goals. A change shows on screen straight away and is saved to the server half a
@@ -11,6 +11,7 @@ import { messageFrom } from '@/lib/http';
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [prescribed, setPrescribed] = useState<Prescribed>({});
   const [saving, setSaving] = useState(false);
   const pending = useRef<Partial<Settings>>({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,10 +20,11 @@ export function useSettings() {
   useEffect(() => {
     let cancelled = false;
     getSettings()
-      .then((s) => {
+      .then((r) => {
         if (cancelled) return;
-        saved.current = s;
-        setSettings(s);
+        saved.current = r.settings;
+        setSettings(r.settings);
+        setPrescribed(r.prescribed ?? {});
       })
       .catch((e) => {
         if (!cancelled) setError(messageFrom(e));
@@ -45,8 +47,20 @@ export function useSettings() {
       setSettings((current) => (current ? { ...next, ...pending.current } : next));
       setError(null);
     } catch (e) {
-      setError(messageFrom(e));
-      if (saved.current) setSettings(saved.current);
+      if (e instanceof ApiError && e.code === 'TARGET_SET_BY_DIETITIAN') {
+        setError('That goal is set by your dietitian, so you cannot change it.');
+        // Re-read, so the screen shows the dietitian's values as read-only.
+        getSettings()
+          .then((r) => {
+            saved.current = r.settings;
+            setSettings(r.settings);
+            setPrescribed(r.prescribed ?? {});
+          })
+          .catch(() => {});
+      } else {
+        setError(messageFrom(e));
+        if (saved.current) setSettings(saved.current);
+      }
     } finally {
       setSaving(false);
     }
@@ -62,5 +76,5 @@ export function useSettings() {
     [flush]
   );
 
-  return { settings, error, saving, change };
+  return { settings, prescribed, error, saving, change };
 }

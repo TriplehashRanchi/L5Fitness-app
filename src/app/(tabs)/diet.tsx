@@ -1,4 +1,6 @@
+import { DisplayText } from '@/components/display-text';
 import { PageHeading } from '@/components/page-heading';
+import { GreenBackground } from '@/components/green-background';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
@@ -9,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClientsList } from '@/components/clients-list';
 import { WeekStrip } from '@/components/week-strip';
 import { BottomTabInset } from '@/constants/theme';
+import { useForegroundReload } from '@/hooks/use-foreground-reload';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { formatLongDate, getWeekDays, getZonedParts, toDayKey } from '@/lib/datetime';
 import { messageFrom } from '@/lib/http';
@@ -23,7 +26,7 @@ import {
 } from '@/lib/wellness-api';
 import { useProfile } from '@/providers/profile-provider';
 
-const BRAND = '#c6f432';
+const BRAND = '#3ddc68';
 const WEB_TOP_BAR = 72;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -71,6 +74,8 @@ function MyDiet() {
     }, [load])
   );
 
+  useForegroundReload(load);
+
   const refresh = async () => {
     setRefreshing(true);
     await load();
@@ -81,21 +86,25 @@ function MyDiet() {
   const toggle = async (item: DietItem) => {
     const done = !item.done;
     setNotice(null);
-    setData((d) =>
-      d
-        ? {
-            ...d,
-            items: d.items.map((i) => (i.id === item.id ? { ...i, done } : i)),
-            summary: { ...d.summary, done: d.summary.done + (done ? 1 : -1) },
-            week: d.week.map((w) => (w.day === d.day ? { ...w, done: w.done + (done ? 1 : -1) } : w)),
-          }
-        : d
-    );
+    const apply = (value: boolean) =>
+      setData((d) => {
+        const was = d?.items.find((i) => i.id === item.id);
+        if (!d || !was || was.done === value) return d;
+        const step = value ? 1 : -1;
+        return {
+          ...d,
+          items: d.items.map((i) => (i.id === item.id ? { ...i, done: value } : i)),
+          summary: { ...d.summary, done: d.summary.done + step },
+          week: d.week.map((w) => (w.day === d.day ? { ...w, done: w.done + step } : w)),
+        };
+      });
+    apply(done);
     try {
       await (done ? tickItem(item.id) : untickItem(item.id));
     } catch (e) {
       setNotice(messageFrom(e));
-      load();
+      // Put this one item back as it was, so a tick that was not saved is not left showing.
+      apply(!done);
     }
   };
 
@@ -109,6 +118,7 @@ function MyDiet() {
 
   return (
     <View className="flex-1 bg-ink">
+      <GreenBackground />
       <StatusBar style="light" />
       <ScrollView
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={BRAND} colors={[BRAND]} />}
@@ -148,7 +158,7 @@ function MyDiet() {
           <View className="mx-5 mt-5 rounded-3xl border border-white/10 bg-card p-5">
             <Text className="text-base font-bold text-white">{profile ? 'Connect with your dietitian' : 'A plan made for you'}</Text>
             <Text className="mt-1 text-sm text-muted">{profile ? 'Choose what you share in your profile to receive a personal diet plan.' : 'Add your fitness profile whenever you’re ready for a personal diet plan.'}</Text>
-            <Pressable onPress={() => router.push('/edit-profile')} accessibilityRole="button" className="mt-4 self-start rounded-full bg-brand px-5 py-2.5 active:opacity-80">
+            <Pressable onPress={() => router.push(profile ? '/edit-profile' : ('/complete-profile' as never))} accessibilityRole="button" className="mt-4 self-start rounded-full bg-brand px-5 py-2.5 active:opacity-80">
               <Text className="text-sm font-bold text-ink">{profile ? 'Manage sharing' : 'Complete fitness profile'}</Text>
             </Pressable>
           </View>
@@ -163,9 +173,9 @@ function MyDiet() {
               </Text>
             </View>
             <View className="mt-3 flex-row items-baseline gap-2">
-              <Text {...COMPACT_TEXT} style={{ fontSize: 34, lineHeight: 40 }} className="font-bold text-white">
-                {doneCount} of {total}
-              </Text>
+              <DisplayText {...COMPACT_TEXT} style={{ fontSize: 34, lineHeight: 40 }} className="text-white">
+                {doneCount}<Text className="text-muted"> / {total}</Text>
+              </DisplayText>
               <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted">
                 done
               </Text>
@@ -174,7 +184,7 @@ function MyDiet() {
               <View className="rounded-full bg-brand" style={{ height: 6, width: `${percent}%` }} />
             </View>
             <Text {...COMPACT_TEXT} className="mt-2 text-xs text-muted">
-              {doneCount === total ? 'Everything done for this day 🎉' : `${total - doneCount} to go`}
+              {doneCount === total ? 'All items completed for today' : `${total - doneCount} to go`}
             </Text>
           </View>
         ) : null}
@@ -182,8 +192,10 @@ function MyDiet() {
         {data && data.sharing && total === 0 ? (
           <View className="mx-5 mt-5 items-center rounded-3xl border border-white/10 bg-card px-6 py-12">
             <SymbolView name={{ ios: 'fork.knife', android: 'restaurant_menu', web: 'restaurant_menu' }} tintColor={BRAND} size={30} />
-            <Text className="mt-4 text-lg font-bold text-white">No plan for this day yet</Text>
-            <Text className="mt-1 text-center text-sm text-muted">Your dietitian has not posted a plan for this day. It will appear here as soon as they do.</Text>
+            <Text className="mt-4 text-lg font-bold text-white">{data.coaching.status === 'pending' ? 'Waiting for your dietitian' : 'Your dietitian is connected'}</Text>
+            <Text className="mt-1 text-center text-sm text-muted">{data.coaching.status === 'pending'
+              ? 'Your coach will assign a dietitian to you soon. Your personal diet plan will appear here once they add it.'
+              : `${data.coaching.dietitianName || 'Your dietitian'} is your dietitian. No diet plan has been added for this day yet.`}</Text>
           </View>
         ) : null}
 
@@ -206,7 +218,7 @@ function MyDiet() {
                     className="flex-row items-start gap-4 rounded-2xl bg-card p-4 active:opacity-80">
                     <View
                       className={`mt-0.5 h-7 w-7 items-center justify-center rounded-full border-2 ${item.done ? 'border-brand bg-brand' : 'border-white/25'}`}>
-                      {item.done ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor="#0b0b0d" size={14} /> : null}
+                      {item.done ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor="#050a07" size={14} /> : null}
                     </View>
                     <View className="flex-1">
                       <Text {...COMPACT_TEXT} className={`text-base font-bold ${item.done ? 'text-muted line-through' : 'text-white'}`}>

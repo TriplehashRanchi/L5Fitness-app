@@ -5,5 +5,5 @@ import { Platform } from 'react-native';
  * Only values that Tailwind classes can't express go here.
  */
 
-/** Height of the native bottom tab bar (content scrolls behind it). */
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+/** Space the floating pill tab bar takes above the safe area (content scrolls behind it). */
+export const BottomTabInset = Platform.select({ ios: 76, android: 76 }) ?? 0;

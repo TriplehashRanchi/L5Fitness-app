@@ -3,12 +3,12 @@
 
 /* L5 Fitness brand tokens — use as bg-brand, text-brand, border-brand, etc. */
 @theme {
-  --color-brand: #c6f432;
-  --color-brand-dark: #9bc41f;
-  --color-ink: #0b0b0d;
-  --color-card: #16191d;
-  --color-card-2: #20252b;
-  --color-muted: #9bA2ac;
+  --color-brand: #3ddc68;
+  --color-brand-dark: #24b24c;
+  --color-ink: #050a07;
+  --color-card: #0b1a11;
+  --color-card-2: #12251a;
+  --color-muted: #8fa396;
   --color-accent: #ff6b35;
 }
 

@@ -1,10 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { putSteps } from '@/lib/fitness-api';
 import { toDayKey, type CalendarDay } from '@/lib/datetime';
 import { stepsProvider } from '@/lib/steps/provider';
 import { summarizeWeek, type WeekSummary } from '@/lib/steps/summary';
 import type { StepsStatus } from '@/lib/steps/types';
 
+const SYNC_EVERY_MS = 5 * 60_000;
+/** What was last sent (or tried), kept outside the hook so remounting does not resend at once. */
+let lastSync = { signature: '', at: 0 };
+
+/** Sends the week's known counts so the coach can see them. Throttled; errors are ignored. */
+function syncSteps(keys: string[], counts: (number | null)[]) {
+  const entries = keys
+    .map((day, i) => ({ day, steps: counts[i] }))
+    .filter((e): e is { day: string; steps: number } => e.steps != null && Number.isFinite(e.steps) && e.steps >= 0)
+    .map((e) => ({ day: e.day, steps: Math.round(e.steps) }))
+    .slice(-8);
+  if (!entries.length) return;
+  const signature = JSON.stringify(entries);
+  const nowMs = Date.now();
+  if (signature === lastSync.signature || nowMs - lastSync.at < SYNC_EVERY_MS) return;
+  lastSync = { signature, at: nowMs };
+  putSteps(entries).catch(() => {
+    // Not worth bothering the member: the next change, after the throttle, tries again.
+    if (lastSync.signature === signature) lastSync = { signature: '', at: nowMs };
+  });
+}
 
 /**
  * Steps for each day of the week shown on Home, from Apple Health / Health Connect.
@@ -48,6 +70,7 @@ export function useSteps(now: Date, days: CalendarDay[], today: CalendarDay, goa
     if (id !== latest.current) return; // a newer read finished first
     setStatus(next);
     setCounts(result);
+    if (next === 'ready') syncSteps(keysText.split(','), result);
   }, [keysText]);
 
   const minute = Math.floor(now.getTime() / 60_000);
@@ -74,6 +97,7 @@ export function useSteps(now: Date, days: CalendarDay[], today: CalendarDay, goa
     asked,
     connecting,
     connect,
+    reload: load,
     openSettings: stepsProvider.openSettings,
     sourceName: stepsProvider.sourceName,
   };

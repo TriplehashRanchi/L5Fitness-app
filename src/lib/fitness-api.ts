@@ -1,5 +1,8 @@
 /** Fitness data from L5Fitness-api: catalog, the member's tracking, classes. */
 import { api, NetworkError } from '@/lib/http';
+import type { MealSlot } from '@/lib/wellness-api';
+
+export type CoachingStatus = { status: 'not_shared' | 'pending' | 'accepted'; sharing: boolean; dietitianName: string | null; dietitianId: string | null };
 
 export type Level = 'beginner' | 'intermediate' | 'advanced' | 'all';
 
@@ -19,6 +22,8 @@ export type Workout = {
   /** icon key, see constants/icons.ts */
   icon: string;
   isProgram: boolean;
+  instructions?: string;
+  personal?: boolean;
 };
 
 export type Category = { slug: string; name: string; count: number };
@@ -41,6 +46,18 @@ export type GymClass = {
 };
 
 export type Settings = { weeklyGoal: number; stepGoal: number; waterGoalMl: number };
+
+/** Which goals the dietitian has fixed: true means the member cannot change it. */
+export type Prescribed = { weeklyWorkouts?: number | null; steps?: number | null; waterMl?: number | null };
+
+export type Targets = {
+  waterMl: number | null;
+  steps: number | null;
+  weeklyWorkouts: number | null;
+  calories: number | null;
+  proteinG: number | null;
+  prescribed: Prescribed;
+};
 
 export type WaterToday = { totalMl: number; lastId: string | null; goalMl: number };
 
@@ -65,6 +82,7 @@ export const MEAL_LABEL: Record<MealType, string> = {
 };
 
 export type Home = {
+  coaching: CoachingStatus;
   today: string;
   plan: Workout | null;
   /** today's totals; avgHeartRate is null without a heart-rate device */
@@ -85,6 +103,10 @@ export type Home = {
   settings: Settings;
   water: WaterToday;
   meals: Meal[];
+  targets?: Targets;
+  diet?: { total: number; done: number; next: { title: string; mealSlot: string } | null; items: DayItem[] };
+  /** what the server has; the phone's pedometer may be higher */
+  steps?: { value: number | null; goal: number };
 };
 
 export const LEVEL_LABEL: Record<Level, string> = {
@@ -123,7 +145,7 @@ export async function cancelBooking(id: string, date: string) {
 // ── Settings ─────────────────────────────────────────────────────────────────────────────────
 
 export async function getSettings() {
-  return (await api<{ settings: Settings }>('/me/settings')).settings;
+  return await api<{ settings: Settings; prescribed?: Prescribed }>('/me/settings');
 }
 
 /** Send only the goals that changed. */
@@ -145,6 +167,7 @@ export async function undoWater(id: string, day: string) {
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 /**
  * Uploads a photo straight to storage with a short-lived signed link, and returns its id.
@@ -167,10 +190,14 @@ export async function uploadPhoto(uri: string, mimeType?: string | null): Promis
     { method: 'POST', body: { contentType, size: blob.size } }
   );
   let put: Response;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
   try {
-    put = await fetch(created.uploadUrl, { method: 'PUT', headers: created.headers, body: blob });
+    put = await fetch(created.uploadUrl, { method: 'PUT', headers: created.headers, body: blob, signal: controller.signal });
   } catch {
     throw new NetworkError("Can't reach the server. Check your internet connection and try again.");
+  } finally {
+    clearTimeout(timer);
   }
   if (!put.ok) throw new Error('The photo could not be uploaded. Please try again.');
   await api(`/uploads/${created.upload.id}/complete`, { method: 'POST' });
@@ -196,4 +223,62 @@ export function deleteMeal(id: string) {
 /** Erases everything we store about the member (the sign-in itself is removed by the app). */
 export function deleteAccountData() {
   return api('/me', { method: 'DELETE' });
+}
+
+export type StepHistory = {
+  from: string;
+  to: string;
+  /** today's step target (the dietitian's when `prescribed`) */
+  goal: number;
+  prescribed: boolean;
+  /** one entry per calendar day, oldest first; `steps` is null when nothing was saved for that day */
+  days: { day: string; steps: number | null }[];
+};
+
+/** The steps saved on the server for the `days` days up to `to` (YYYY-MM-DD). */
+export function getStepHistory(to: string, days = 30) {
+  return api<StepHistory>(`/me/steps?to=${to}&days=${days}`);
+}
+
+/** Sends step counts so the coach can see them and they are kept. `entries` are 1 to 40 days, at most 35 days old. */
+export function putSteps(entries: { day: string; steps: number }[]) {
+  return api('/me/steps', { method: 'PUT', body: { entries } });
+}
+
+// ── One day, everything the dietitian planned and what is done ───────────────────────────────
+
+export type DayItem = {
+  id: string;
+  mealSlot: MealSlot;
+  title: string;
+  details: string | null;
+  calories: number | null;
+  done: boolean;
+};
+
+export type MyDay = {
+  day: string;
+  coaching: CoachingStatus;
+  targets: Targets | null;
+  /** every diet item, the workout (if planned), water and steps count equally */
+  percent: number;
+  training: {
+    id: string;
+    title: string;
+    durationMin: number;
+    kcal: number;
+    instructions: string | null;
+    coach: string | null;
+    done: boolean;
+  } | null;
+  diet: { total: number; done: number; items: DayItem[] };
+  water: { totalMl: number; goalMl: number };
+  steps: { value: number | null; goal: number };
+  meals: { id: string; mealType: MealType; note: string | null; eatenAt: string; photoUrl: string | null }[];
+  workouts: { id: string; title: string; startedAt: string; durationMin: number; calories: number }[];
+};
+
+/** `day` is a calendar day, YYYY-MM-DD. */
+export function getMyDay(day: string) {
+  return api<MyDay>(`/me/day?day=${day}`);
 }

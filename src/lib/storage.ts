@@ -20,7 +20,7 @@ const secure = {
 // ── Workout in progress ──────────────────────────────────────────────────────────────────────
 // Saved on the device so a workout keeps running if the app is closed or the phone restarts.
 
-export type ActiveWorkout = { userId: string; workoutId: string; title: string; startedAt: string };
+export type ActiveWorkout = { userId: string; workoutId: string; title: string; startedAt: string; instructions?: string };
 
 const ACTIVE_WORKOUT_KEY = 'l5.activeWorkout';
 

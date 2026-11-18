@@ -1,4 +1,8 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ClientTargetsEditor } from '@/components/client-targets-editor';
+import { ClientTrainingEditor } from '@/components/client-training-editor';
+import { DisplayText } from '@/components/display-text';
+import { GreenBackground } from '@/components/green-background';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
@@ -37,7 +41,7 @@ import {
   type PlanDay,
 } from '@/lib/wellness-api';
 
-const BRAND = '#c6f432';
+const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -166,6 +170,7 @@ export default function ClientScreen() {
 
   return (
     <View className="flex-1 bg-ink">
+      <GreenBackground />
       <StatusBar style="light" />
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 40, width: '100%', maxWidth: 840, alignSelf: 'center' }}>
@@ -173,7 +178,7 @@ export default function ClientScreen() {
             <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back" className="h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-70">
               <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={16} />
             </Pressable>
-            <Text className="flex-1 text-2xl font-bold text-white" numberOfLines={1}>{name}</Text>
+            <DisplayText className="flex-1 text-2xl font-bold text-white" numberOfLines={1}>{name}</DisplayText>
           </View>
 
           {error ? (
@@ -196,7 +201,7 @@ export default function ClientScreen() {
                 </View>
                 <View className="mt-4 flex-row items-end justify-between">
                   <View><Text {...COMPACT_TEXT} className="text-[11px] text-muted">Start</Text><Text {...COMPACT_TEXT} className="text-base font-bold text-white">{fmtKg(p.startWeightKg)}</Text></View>
-                  <View className="items-center"><Text {...COMPACT_TEXT} className="text-[11px] text-muted">Now</Text><Text {...COMPACT_TEXT} className="text-2xl font-bold text-brand">{fmtKg(p.weightKg)}</Text></View>
+                  <View className="items-center"><Text {...COMPACT_TEXT} className="text-[11px] text-muted">Now</Text><DisplayText {...COMPACT_TEXT} className="text-2xl font-bold text-brand">{fmtKg(p.weightKg)}</DisplayText></View>
                   <View className="items-end"><Text {...COMPACT_TEXT} className="text-[11px] text-muted">Target</Text><Text {...COMPACT_TEXT} className="text-base font-bold text-white">{fmtKg(p.targetWeightKg)}</Text></View>
                 </View>
                 <View className="mt-3 overflow-hidden rounded-full bg-card-2" style={{ height: 8 }}>
@@ -247,6 +252,8 @@ export default function ClientScreen() {
                 )}
               </View>
 
+              <ClientTargetsEditor memberId={id} />
+
               {/* Plan editor */}
               <View className="mt-7 px-5">
                 <Text className="text-xl font-bold text-white">Diet plan</Text>
@@ -275,7 +282,7 @@ export default function ClientScreen() {
                         {slotItems.map((item) => (
                           <View key={item.id} className="flex-row items-center gap-3 rounded-2xl bg-card p-4">
                             <View className={`h-6 w-6 items-center justify-center rounded-full ${item.done ? 'bg-brand' : 'border-2 border-white/25'}`} accessibilityLabel={item.done ? 'Completed by the member' : 'Not completed yet'}>
-                              {item.done ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor="#0b0b0d" size={12} /> : null}
+                              {item.done ? <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor="#050a07" size={12} /> : null}
                             </View>
                             <View className="flex-1">
                               <Text {...COMPACT_TEXT} className="text-base font-bold text-white">{item.title}</Text>
@@ -283,7 +290,7 @@ export default function ClientScreen() {
                               {item.calories != null ? <Text {...COMPACT_TEXT} className="text-xs text-brand">{item.calories} kcal</Text> : null}
                             </View>
                             <Pressable onPress={() => setToDelete(item)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`Delete ${item.title}`} className="h-10 w-10 items-center justify-center rounded-full active:bg-card-2">
-                              <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor="#8b8b94" size={18} />
+                              <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor="#8fa396" size={18} />
                             </Pressable>
                           </View>
                         ))}
@@ -313,7 +320,7 @@ export default function ClientScreen() {
                           value={f.value}
                           onChangeText={f.set}
                           placeholder={f.ph}
-                          placeholderTextColor="#7c8592"
+                          placeholderTextColor="#6f8577"
                           selectionColor={BRAND}
                           cursorColor={BRAND}
                           maxLength={f.max}
@@ -330,14 +337,14 @@ export default function ClientScreen() {
                         <Text className="font-bold text-white">Cancel</Text>
                       </Pressable>
                       <Pressable onPress={save} disabled={busy} accessibilityRole="button" className="flex-1 items-center rounded-full bg-brand py-3 active:opacity-80">
-                        {busy ? <ActivityIndicator color="#0b0b0d" /> : <Text className="font-bold text-ink">Add to plan</Text>}
+                        {busy ? <ActivityIndicator color="#050a07" /> : <Text className="font-bold text-ink">Add to plan</Text>}
                       </Pressable>
                     </View>
                   </View>
                 ) : (
                   <View className="flex-row gap-3">
                     <Pressable onPress={() => { setAdding(true); setNotice(null); }} accessibilityRole="button" className="flex-1 flex-row items-center justify-center gap-2 rounded-full bg-brand py-3.5 active:opacity-80">
-                      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor="#0b0b0d" size={16} />
+                      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor="#050a07" size={16} />
                       <Text {...COMPACT_TEXT} className="font-bold text-ink">Add item</Text>
                     </Pressable>
                     <Pressable onPress={copyYesterday} disabled={busy} accessibilityRole="button" className="flex-1 items-center justify-center rounded-full border border-white/15 bg-card py-3.5 active:opacity-70">
@@ -346,6 +353,7 @@ export default function ClientScreen() {
                   </View>
                 )}
               </View>
+              <ClientTrainingEditor key={`${id}:${day}`} memberId={id} day={day} />
             </>
           ) : null}
         </ScrollView>

@@ -92,7 +92,7 @@ const SETUP_STEPS = ['goal', 'sex', 'birth', 'height', 'weight', 'activity', 'di
 /** `birthWheelYear`: setup only. The date-of-birth wheels start on 1 January of this year, so they always hold a valid date. */
 function initialForm(p: BodyProfile | null, birthWheelYear?: number): Form {
   if (!p) {
-    return { goal: null, sex: null, day: birthWheelYear ? '1' : '', month: birthWheelYear ? '1' : '', year: birthWheelYear ? String(birthWheelYear) : '', height: birthWheelYear ? '170' : '', weight: birthWheelYear ? '70' : '', target: birthWheelYear ? '70' : '', activity: null, diet: null, allergies: '', medical: '', share: false };
+    return { goal: null, sex: null, day: birthWheelYear ? '1' : '', month: birthWheelYear ? '1' : '', year: birthWheelYear ? String(birthWheelYear) : '', height: birthWheelYear ? '170' : '', weight: birthWheelYear ? '70' : '', target: birthWheelYear ? '70' : '', activity: null, diet: null, allergies: '', medical: '', share: true };
   }
   const [year, month, day] = p.birthDate.split('-');
   return {
@@ -143,7 +143,7 @@ function Field({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#7c8592"
+          placeholderTextColor="#6f8577"
           selectionColor={BRAND}
           cursorColor={BRAND}
           keyboardType={keyboardType}
@@ -962,6 +962,7 @@ export function ProfileForm({
   onSkip,
   skipping,
   skipError,
+  skipLabel = 'Skip',
 }: {
   mode: 'setup' | 'edit';
   onDone?: () => void;
@@ -969,6 +970,8 @@ export function ProfileForm({
   onSkip?: () => void;
   skipping?: boolean;
   skipError?: string | null;
+  /** The word on that button ("Close" when the steps are opened again later). */
+  skipLabel?: string;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -1186,7 +1189,7 @@ export function ProfileForm({
         <View className="flex-1">
           <Text {...COMPACT_TEXT} className="text-base font-bold text-white">Share with my dietitian</Text>
           <Text {...COMPACT_TEXT} className="mt-1 text-xs leading-4 text-muted">
-            Your dietitian can see these answers, your weight and your workouts, and post a diet plan for you. You can switch this off any time in your profile.
+            Your dietitian can see these answers, your weight, meal photos, water, steps and workouts, and post your diet and exercise plans. You can switch this off any time in your profile.
           </Text>
         </View>
         <Switch
@@ -1344,13 +1347,13 @@ export function ProfileForm({
                   disabled={busy || skipping}
                   hitSlop={12}
                   accessibilityRole="button"
-                  accessibilityLabel="Skip for now"
+                  accessibilityLabel={skipLabel === 'Skip' ? 'Skip for now' : skipLabel}
                   className="min-w-12 items-end py-1 active:opacity-60">
                   {skipping ? (
                     <ActivityIndicator color={BRAND} size="small" />
                   ) : (
                     <Text {...COMPACT_TEXT} style={{ color: BRAND }} className="text-sm font-bold">
-                      Skip
+                      {skipLabel}
                     </Text>
                   )}
                 </Pressable>
@@ -1402,7 +1405,7 @@ export function ProfileForm({
                       </View>
                       <Text className="text-base font-semibold text-white">{STEPS[i]}</Text>
                     </View>
-                    <SymbolView name={openSection === i ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor="#9ba2ac" size={16} />
+                    <SymbolView name={openSection === i ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor="#8fa396" size={16} />
                   </Pressable>
                   {openSection === i ? <View className="border-t border-white/5 p-5">{section}</View> : null}
                 </View>

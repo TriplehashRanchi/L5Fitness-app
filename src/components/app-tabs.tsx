@@ -1,37 +1,19 @@
-import { NativeTabs } from 'expo-router/native-tabs';
+import { Tabs } from 'expo-router/js-tabs';
 
-const INK = '#0b0b0d';
-const BRAND = '#c6f432';
-const MUTED = '#9ba2ac';
+import { FloatingTabBar } from '@/components/floating-tab-bar';
 
+const INK = '#050a07';
+
+/** Native: a floating pill tab bar (JS tabs with a custom bar). Same four routes as before. */
 export default function AppTabs() {
   return (
-    <NativeTabs
-      backgroundColor={INK}
-      tintColor={BRAND}
-      iconColor={{ default: MUTED, selected: BRAND }}
-      indicatorColor="#20252b"
-      rippleColor="rgba(198,244,50,0.12)"
-      labelStyle={{ default: { color: MUTED }, selected: { color: '#ffffff' } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="logs">
-        <NativeTabs.Trigger.Label>Logs</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'list.bullet.clipboard', selected: 'list.bullet.clipboard.fill' }} md="assignment" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="diet">
-        <NativeTabs.Trigger.Label>Diet</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife', selected: 'fork.knife' }} md="restaurant_menu" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'person', selected: 'person.fill' }} md="person" />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Tabs
+      tabBar={(props) => <FloatingTabBar {...props} />}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: INK } }}>
+      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="logs" options={{ title: 'Activity' }} />
+      <Tabs.Screen name="diet" options={{ title: 'Diet' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+    </Tabs>
   );
 }

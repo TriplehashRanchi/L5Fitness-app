@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { DisplayText } from '@/components/display-text';
+import { GreenBackground } from '@/components/green-background';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -40,8 +42,8 @@ function loadPicker(): ImagePickerModule | null {
   return picker;
 }
 
-const BRAND = '#c6f432';
-const MUTED = '#8b8b94';
+const BRAND = '#3ddc68';
+const MUTED = '#8fa396';
 const TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** A sensible starting choice from the time of day. */
@@ -59,12 +61,18 @@ export default function AddMealScreen() {
   const insets = useSafeAreaInsets();
   const { format } = useDeviceClock();
 
-  const [mealType, setMealType] = useState<MealType>(() => guessType(new Date().getHours()));
+  // Opened from a meal's own tile (Today's plan), that meal is already chosen.
+  const { type } = useLocalSearchParams<{ type?: string }>();
+  const [mealType, setMealType] = useState<MealType>(() =>
+    TYPES.includes(type as MealType) ? (type as MealType) : guessType(new Date().getHours())
+  );
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsSettings, setNeedsSettings] = useState(false);
+  /** The photo already uploaded, so a retry after a failed save does not upload it again. */
+  const uploaded = useRef<{ uri: string; id: string } | null>(null);
 
   const canSave = !busy && (photo !== null || note.trim().length > 0);
 
@@ -104,7 +112,13 @@ export default function AddMealScreen() {
     setBusy(true);
     setError(null);
     try {
-      const uploadId = photo ? await uploadPhoto(photo.uri, photo.mimeType) : undefined;
+      let uploadId: string | undefined;
+      if (photo) {
+        if (uploaded.current?.uri !== photo.uri) {
+          uploaded.current = { uri: photo.uri, id: await uploadPhoto(photo.uri, photo.mimeType) };
+        }
+        uploadId = uploaded.current.id;
+      }
       const when = new Date();
       await createMeal({
         mealType,
@@ -124,13 +138,14 @@ export default function AddMealScreen() {
 
   return (
     <View className="flex-1 bg-ink">
+      <GreenBackground />
       <StatusBar style="light" />
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32, width: '100%', maxWidth: 840, alignSelf: 'center' }}>
           <View className="flex-row items-center justify-between px-5 pb-4">
-            <Text className="text-2xl font-bold text-white">Add meal</Text>
+            <DisplayText className="text-2xl font-bold text-white">Add meal</DisplayText>
             <Pressable
               onPress={() => router.back()}
               disabled={busy}
@@ -198,7 +213,7 @@ export default function AddMealScreen() {
                       onPress={() => pick('camera')}
                       accessibilityRole="button"
                       className="flex-1 flex-row items-center justify-center gap-2 rounded-full bg-brand py-3 active:opacity-80">
-                      <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#0b0b0d" size={16} />
+                      <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#050a07" size={16} />
                       <Text maxFontSizeMultiplier={1.3} className="font-bold text-ink">
                         Take photo
                       </Text>
@@ -225,7 +240,7 @@ export default function AddMealScreen() {
               value={note}
               onChangeText={setNote}
               placeholder="What did you eat?"
-              placeholderTextColor="#7c8592"
+              placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
               maxLength={200}
@@ -256,7 +271,7 @@ export default function AddMealScreen() {
               accessibilityRole="button"
               className={`items-center rounded-full py-4 active:opacity-80 ${canSave ? 'bg-brand' : 'bg-card-2'}`}>
               {busy ? (
-                <ActivityIndicator color="#0b0b0d" />
+                <ActivityIndicator color="#050a07" />
               ) : (
                 <Text maxFontSizeMultiplier={1.3} className={`text-base font-bold ${canSave ? 'text-ink' : 'text-muted'}`}>
                   Save meal

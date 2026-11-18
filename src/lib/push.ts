@@ -65,8 +65,35 @@ function setUpHandler(N: Module) {
   });
 }
 
-/** Asks for permission (once), gets the push token and gives it to the server. */
-export async function registerForPush(): Promise<PushStatus> {
+let inFlight: Promise<PushStatus> | null = null;
+let lastStatus: PushStatus | null = null;
+let lastAt = 0;
+const OK_REUSE_MS = 10 * 60_000; // already registered: do not tell the server again for 10 minutes
+const ERROR_BACKOFF_MS = 60_000; // failed (offline, server busy): wait a minute before trying again
+
+/**
+ * Asks for permission (once), gets the push token and gives it to the server.
+ * Safe to call as often as you like: calls that overlap share one request, a recent success is reused,
+ * and a recent failure is not retried straight away. Pass `force` for a "Try again" button.
+ */
+export function registerForPush(force = false): Promise<PushStatus> {
+  if (inFlight) return inFlight;
+  const age = Date.now() - lastAt;
+  if (!force && lastStatus === 'on' && age < OK_REUSE_MS) return Promise.resolve('on');
+  if (!force && lastStatus === 'error' && age < ERROR_BACKOFF_MS) return Promise.resolve('error');
+  inFlight = registerNow()
+    .then((status) => {
+      lastStatus = status;
+      lastAt = Date.now();
+      return status;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
+}
+
+async function registerNow(): Promise<PushStatus> {
   const N = getNotifications();
   if (!N || !Device.isDevice) return 'unavailable';
   try {
@@ -77,7 +104,7 @@ export async function registerForPush(): Promise<PushStatus> {
         name: 'General',
         importance: N.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#c6f432',
+        lightColor: '#3ddc68',
       });
     }
     let { status, canAskAgain } = await N.getPermissionsAsync();
@@ -102,5 +129,8 @@ export async function registerForPush(): Promise<PushStatus> {
 export async function unregisterPush() {
   const token = currentToken;
   currentToken = null;
+  // The next person to sign in on this phone must register it again.
+  lastStatus = null;
+  lastAt = 0;
   if (token) await unregisterToken(token).catch(() => {});
 }
