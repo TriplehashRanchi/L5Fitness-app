@@ -1,33 +1,25 @@
+import { HistoryDayCard, HistoryFilterBar, HistoryStats, type HistoryFilter } from '@/components/activity/history';
 import { DaySkeleton } from '@/components/day-plan/day-skeleton';
-import { DaySummary } from '@/components/day-plan/day-summary';
-import { DietSection } from '@/components/day-plan/diet-section';
-import { ExerciseSection } from '@/components/day-plan/exercise-section';
-import { MealsGrid } from '@/components/day-plan/meals-grid';
-import { ProgressRows } from '@/components/day-plan/progress-rows';
-import { SectionTitle } from '@/components/day-plan/section-title';
 import { WeekPicker } from '@/components/day-plan/week-picker';
 import { DisplayText } from '@/components/display-text';
+import { Checklist } from '@/components/today/checklist';
+import { DaySummary } from '@/components/today/summary';
 import { useMyDay } from '@/hooks/use-my-day';
+import { useSteps } from '@/hooks/use-steps';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Platform,
-  Pressable,
-  RefreshControl,
-  Text,
-  View,
-} from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Platform, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomTabInset } from '@/constants/theme';
-import { type IconName } from '@/constants/icons';
 import { useDeviceClock } from '@/hooks/use-device-clock';
-import { dayLabel, formatTime, getZonedParts, toDayKey, type CalendarDay } from '@/lib/datetime';
+import { dayLabel, getZonedParts, toDayKey, type CalendarDay } from '@/lib/datetime';
+import { dayCounts } from '@/lib/day-plan';
 import { messageFrom } from '@/lib/http';
+import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
+import { withDeviceSteps } from '@/lib/today-tasks';
 import { getHistory, type HistoryDay } from '@/lib/wellness-api';
 
 const BRAND = '#3ddc68';
@@ -36,37 +28,12 @@ const WEB_TOP_BAR = 72;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 type Summary = NonNullable<Awaited<ReturnType<typeof getHistory>>['summary']>;
-type FilterType = 'all' | 'week' | 'month';
 
-function Stat({
-  value,
-  label,
-  icon,
-  color,
-}: {
-  value: string;
-  label: string;
-  icon: IconName;
-  color: string;
-}) {
-  return (
-    <View className="flex-1 rounded-2xl border border-white/5 bg-card p-3.5">
-      <View className="mb-2 h-7 w-7 items-center justify-center rounded-xl bg-card-2">
-        <SymbolView name={icon} tintColor={color} size={15} />
-      </View>
-      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-xl font-black text-white">
-        {value}
-      </Text>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="mt-0.5 text-[11px] font-semibold text-muted">
-        {label}
-      </Text>
-    </View>
-  );
-}
-
-/** 135 → "2h 15m", 45 → "45m". */
-const hoursMinutes = (min: number) => (min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`);
-
+/**
+ * The Activity tab. Top: any day of any week, shown with the same ring and cards as Today's plan
+ * (today can be acted on; other days are only shown, except that past meals can still be ticked).
+ * Below: the workout logbook.
+ */
 export default function LogsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -78,7 +45,10 @@ export default function LogsScreen() {
   const selectedKey = toDayKey(selected);
   const day = useMyDay(selectedKey);
   const isToday = selectedKey === todayKey;
-  const canStart = isToday && !!day.data?.training && !day.data.training.done;
+  // Today also counts what the phone's pedometer has, like Home and Today's plan do.
+  const { todaySteps } = useSteps(now, [today], today, day.data?.steps.goal || DAILY_STEP_GOAL);
+  const shown = useMemo(() => (day.data && isToday ? withDeviceSteps(day.data, todaySteps) : day.data), [day.data, isToday, todaySteps]);
+  const percent = shown ? Math.max(shown.percent, dayCounts(shown).percent) : 0;
   const dayMessage = day.notice ?? day.error;
 
   const [days, setDays] = useState<HistoryDay[] | null>(null);
@@ -87,7 +57,7 @@ export default function LogsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [filter, setFilter] = useState<HistoryFilter>('all');
   const latest = useRef(0);
 
   const loadFirst = useCallback(async () => {
@@ -143,13 +113,33 @@ export default function LogsScreen() {
 
   const isWeb = Platform.OS === 'web';
   const header = (
-    <View className="pb-4">
+    <View className="pb-3">
       <View className="px-5 pt-3">
         <DisplayText accessibilityRole="header" className="text-[32px] leading-10 tracking-tight text-white" numberOfLines={1}>
           Activity
         </DisplayText>
       </View>
       <WeekPicker selected={selected} today={today} firstWeekday={firstWeekday} locale={format.locale} onSelect={setPicked} />
+
+      {/* Which day the cards below are about, and the way back to today. */}
+      <View className="mx-5 mb-3 flex-row items-center justify-between" style={{ minHeight: 36 }}>
+        <Text {...COMPACT_TEXT} accessibilityRole="header" className="font-bold text-white" style={{ fontSize: 18 }}>
+          {dayLabel(selectedKey, todayKey, format.locale)}
+        </Text>
+        {isToday ? null : (
+          <Pressable
+            onPress={() => setPicked(null)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Back to today"
+            className="items-center justify-center rounded-full active:opacity-70"
+            style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
+            <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
+              Today
+            </Text>
+          </Pressable>
+        )}
+      </View>
 
       {dayMessage ? (
         <View accessibilityRole="alert" className="mx-5 mb-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
@@ -165,97 +155,41 @@ export default function LogsScreen() {
 
       {day.loading ? (
         <DaySkeleton />
-      ) : day.data ? (
+      ) : shown ? (
         <>
-          <DaySummary day={day.data} label={`Progress for ${dayLabel(selectedKey, todayKey, format.locale)}`} />
-          <ExerciseSection
-            training={day.data.training}
-            coaching={day.data.coaching}
-            loading={false}
-            onStart={canStart ? () => router.navigate({ pathname: '/', params: { start: '1' } } as never) : undefined}
-          />
-          <DietSection
-            diet={day.data.diet}
-            coaching={day.data.coaching}
-            canTick={selectedKey <= todayKey}
+          <DaySummary day={shown} percent={percent} locale={format.locale} />
+          <Checklist
+            day={shown}
+            locale={format.locale}
             pending={day.pending}
             onToggle={day.toggleItem}
+            canTick={selectedKey <= todayKey}
+            // Only today can be acted on from here; every other day is just shown.
+            onStart={isToday ? () => router.navigate({ pathname: '/', params: { start: '1' } } as never) : undefined}
+            onDrink={isToday ? day.drink : undefined}
+            onUndoDrink={isToday ? day.undoDrink : undefined}
+            waterBusy={day.waterBusy}
+            lastDrinkMl={day.lastDrinkMl}
+            onOpenSteps={isToday ? () => router.push('/steps') : undefined}
+            onAddPhoto={isToday ? (type) => router.push({ pathname: '/add-meal', params: { type } }) : undefined}
           />
-          <ProgressRows water={day.data.water} steps={day.data.steps} locale={format.locale} />
-          <MealsGrid meals={day.data.meals} format={format} />
         </>
       ) : null}
 
-      <View className="mt-3">
-        <SectionTitle title="History" />
+      <View className="px-5" style={{ marginTop: 14, marginBottom: 12 }}>
+        <DisplayText {...COMPACT_TEXT} accessibilityRole="header" className="tracking-tight text-white" style={{ fontSize: 24, lineHeight: 30 }}>
+          History
+        </DisplayText>
       </View>
-    <View className="px-5">
-      {/* Summary Cards */}
-      {summary ? (
-        <View className="mt-4 flex-row gap-2">
-          <Stat
-            value={String(summary.workouts)}
-            label="Workouts"
-            icon={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }}
-            color={BRAND}
-          />
-          <Stat
-            value={hoursMinutes(summary.minutes)}
-            label="Duration"
-            icon={{ ios: 'timer', android: 'timer', web: 'timer' }}
-            color="#38bdf8"
-          />
-          <Stat
-            value={summary.calories.toLocaleString(format.locale)}
-            label="Calories"
-            icon={{ ios: 'flame.fill', android: 'local_fire_department', web: 'local_fire_department' }}
-            color="#ff6b35"
-          />
-          <Stat
-            value={String(summary.activeDays)}
-            label="Active Days"
-            icon={{ ios: 'trophy.fill', android: 'emoji_events', web: 'emoji_events' }}
-            color="#eab308"
-          />
-        </View>
-      ) : null}
-
-      {/* Filter Tabs */}
-      <View className="mt-5 flex-row gap-2">
-        {(
-          [
-            { id: 'all', label: 'All Sessions' },
-            { id: 'week', label: 'Past 7 Days' },
-            { id: 'month', label: 'Past 30 Days' },
-          ] as const
-        ).map((f) => {
-          const selected = filter === f.id;
-          return (
-            <Pressable
-              key={f.id}
-              onPress={() => setFilter(f.id)}
-              className={`rounded-full px-4 py-2 ${
-                selected ? 'bg-brand' : 'border border-white/10 bg-card'
-              } active:opacity-70`}>
-              <Text
-                {...COMPACT_TEXT}
-                className={`text-xs font-bold ${selected ? 'text-ink' : 'text-muted'}`}>
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
+      <HistoryFilterBar value={filter} onChange={setFilter} />
 
       {error ? (
-        <View
-          accessibilityRole="alert"
-          className="mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+        <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
           <Text className="text-sm font-semibold text-white">{error}</Text>
           <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text>
         </View>
       ) : null}
-    </View>
     </View>
   );
 
@@ -273,117 +207,44 @@ export default function LogsScreen() {
           alignSelf: 'center',
           paddingBottom: insets.bottom + (isWeb ? 0 : BottomTabInset) + 24,
         }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor={BRAND}
-            colors={[BRAND]}
-          />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={BRAND} colors={[BRAND]} />}
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
-          <View className="mx-5 mb-4 overflow-hidden rounded-3xl border border-white/5 bg-card p-5">
-            {/* Day Header & Daily Totals */}
-            <View className="flex-row items-center justify-between border-b border-white/5 pb-3">
-              <View className="flex-row items-center gap-2">
-                <View className="h-2 w-2 rounded-full bg-brand" />
-                <Text className="text-base font-bold text-white">
-                  {dayLabel(item.day, todayKey, format.locale)}
-                </Text>
-              </View>
-              <View className="rounded-full bg-card-2 px-3 py-1">
-                <Text {...COMPACT_TEXT} className="text-xs font-bold text-brand">
-                  {hoursMinutes(item.totalMinutes)} · {item.totalCalories} kcal
-                </Text>
-              </View>
-            </View>
-
-            {/* Individual Workouts for the Day */}
-            <View className="mt-3.5 gap-3">
-              {item.workouts.map((w) => {
-                const burnRate = Math.round(w.calories / Math.max(1, w.durationMin));
-                return (
-                  <View
-                    key={w.id}
-                    className="flex-row items-center gap-3.5 rounded-2xl bg-card-2 p-3.5 border border-white/5">
-                    <View className="h-11 w-11 items-center justify-center rounded-xl bg-brand/10 border border-brand/20">
-                      <SymbolView
-                        name={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }}
-                        tintColor={BRAND}
-                        size={20}
-                      />
-                    </View>
-
-                    <View className="flex-1">
-                      <Text {...COMPACT_TEXT} numberOfLines={1} className="text-sm font-bold text-white">
-                        {w.title}
-                      </Text>
-                      <View className="mt-0.5 flex-row items-center gap-2">
-                        <Text {...COMPACT_TEXT} className="text-xs text-muted">
-                          {formatTime(new Date(w.startedAt), format)}
-                        </Text>
-                        <Text {...COMPACT_TEXT} className="text-[11px] text-muted">
-                          ·
-                        </Text>
-                        <Text {...COMPACT_TEXT} className="text-xs text-muted">
-                          ~{burnRate} kcal/min
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View className="items-end">
-                      <View className="rounded-full bg-brand/15 px-2.5 py-0.5">
-                        <Text {...COMPACT_TEXT} className="text-xs font-bold text-brand">
-                          {w.durationMin} min
-                        </Text>
-                      </View>
-                      <Text {...COMPACT_TEXT} className="mt-1 text-xs font-semibold text-muted">
-                        {w.calories} kcal
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        renderItem={({ item }) => <HistoryDayCard item={item} todayKey={todayKey} format={format} />}
         ListEmptyComponent={
           days === null ? (
             error ? undefined : (
-              <View className="items-center py-20">
+              <View className="items-center py-14">
                 <ActivityIndicator color={BRAND} size="large" />
-                <Text className="mt-3 text-sm text-muted">Loading your logbook…</Text>
               </View>
             )
           ) : (
-            <View className="mx-5 items-center rounded-3xl border border-white/10 bg-card px-6 py-14">
-              <View className="h-16 w-16 items-center justify-center rounded-2xl bg-card-2 border border-white/5">
-                <SymbolView
-                  name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }}
-                  tintColor={BRAND}
-                  size={32}
-                />
+            <View className="mx-5 items-center rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
+              <View className="items-center justify-center" style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(61,220,104,0.12)' }}>
+                <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} tintColor={BRAND} size={28} />
               </View>
-              <Text className="mt-4 text-xl font-bold text-white">No Workouts Yet</Text>
-              <Text className="mt-2 text-center text-sm leading-6 text-muted max-w-[280px]">
-                {filter === 'all'
-                  ? 'Finish a workout on the Home screen to track your duration, calories, and history here.'
-                  : 'No workout logs match this timeframe. Switch back to "All Sessions" to view your full history.'}
+              <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 18, marginTop: 14 }}>
+                {filter === 'all' ? 'No workouts yet' : 'Nothing in this period'}
               </Text>
-              <Pressable
-                onPress={() => router.navigate('/')}
-                accessibilityRole="button"
-                className="mt-6 flex-row items-center gap-2 rounded-full bg-brand px-7 py-3.5 active:opacity-80">
-                <SymbolView
-                  name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }}
-                  tintColor={INK}
-                  size={14}
-                />
-                <Text className="text-sm font-black text-ink">Start Today&apos;s Workout</Text>
-              </Pressable>
+              {filter === 'all' ? (
+                <Pressable
+                  onPress={() => router.navigate('/')}
+                  accessibilityRole="button"
+                  className="flex-row items-center justify-center rounded-full bg-brand active:opacity-80"
+                  style={{ gap: 8, minHeight: 48, paddingHorizontal: 24, marginTop: 16 }}>
+                  <SymbolView name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }} tintColor={INK} size={14} />
+                  <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 15 }}>
+                    Start today’s workout
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable onPress={() => setFilter('all')} accessibilityRole="button" className="justify-center active:opacity-60" style={{ minHeight: 44, marginTop: 6 }}>
+                  <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 14 }}>
+                    Show all
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )
         }

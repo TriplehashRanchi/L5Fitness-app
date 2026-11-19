@@ -88,7 +88,7 @@ function Tick({ done }: { done: boolean }) {
   );
 }
 
-function WorkoutSection({ day, onStart }: { day: MyDay; onStart: () => void }) {
+function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) {
   const [open, setOpen] = useState(false);
   const t = day.training;
   const icon = { ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' } as const;
@@ -143,7 +143,7 @@ function WorkoutSection({ day, onStart }: { day: MyDay; onStart: () => void }) {
           ))
         : null}
 
-      {!t.done ? (
+      {!t.done && onStart ? (
         <Pressable
           onPress={onStart}
           accessibilityRole="button"
@@ -160,7 +160,19 @@ function WorkoutSection({ day, onStart }: { day: MyDay; onStart: () => void }) {
   );
 }
 
-function MealsSection({ day, locale, pending, onToggle }: { day: MyDay; locale: string; pending: Set<string>; onToggle: (i: DayItem) => void }) {
+function MealsSection({
+  day,
+  locale,
+  pending,
+  canTick,
+  onToggle,
+}: {
+  day: MyDay;
+  locale: string;
+  pending: Set<string>;
+  canTick: boolean;
+  onToggle: (i: DayItem) => void;
+}) {
   const slots = SLOT_ORDER.map((slot) => ({ slot, items: day.diet.items.filter((i) => i.mealSlot === slot) })).filter((s) => s.items.length > 0);
   const { planned, ticked } = calorieSummary(day.diet.items);
   const icon = { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' } as const;
@@ -191,7 +203,7 @@ function MealsSection({ day, locale, pending, onToggle }: { day: MyDay; locale: 
               <Pressable
                 key={item.id}
                 onPress={() => onToggle(item)}
-                disabled={busy}
+                disabled={busy || !canTick}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: item.done, busy }}
                 accessibilityLabel={`${SLOT_LABEL[slot]} ${item.title}${item.calories ? `, ${item.calories} calories` : ''}, ${item.done ? 'done' : 'not done'}`}
@@ -260,8 +272,8 @@ function WaterSection({
   day: MyDay;
   busy: boolean;
   lastDrinkMl: number | null;
-  onDrink: (ml: number) => void;
-  onUndo: () => void;
+  onDrink?: (ml: number) => void;
+  onUndo?: () => void;
 }) {
   const { totalMl, goalMl } = day.water;
   const hasGoal = goalMl > 0;
@@ -291,10 +303,10 @@ function WaterSection({
           return (
             <Pressable
               key={i}
-              onPress={() => onDrink(GLASS_ML)}
-              disabled={busy || fill >= 1}
+              onPress={() => onDrink?.(GLASS_ML)}
+              disabled={!onDrink || busy || fill >= 1}
               accessibilityRole="button"
-              accessibilityLabel={fill >= 1 ? `Glass ${i + 1}, drunk` : `Glass ${i + 1}, tap to add ${GLASS_ML} millilitres`}
+              accessibilityLabel={fill >= 1 ? `Glass ${i + 1}, drunk` : onDrink ? `Glass ${i + 1}, tap to add ${GLASS_ML} millilitres` : `Glass ${i + 1}, empty`}
               className="items-center justify-center active:opacity-60"
               style={{ width: '12.5%', height: 46 }}>
               <Glass fill={fill} id={`glass-${i}`} />
@@ -302,13 +314,15 @@ function WaterSection({
           );
         })}
       </View>
+      {onDrink ? (
+        <>
       <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
         Tap a glass to add {GLASS_ML} ml
       </Text>
 
       <View className="flex-row items-center" style={{ gap: 8, marginTop: 12 }}>
         <Pressable
-          onPress={() => onDrink(GLASS_ML)}
+          onPress={() => onDrink?.(GLASS_ML)}
           disabled={busy}
           accessibilityRole="button"
           accessibilityLabel={`Add ${GLASS_ML} millilitres of water`}
@@ -320,7 +334,7 @@ function WaterSection({
           </Text>
         </Pressable>
         <Pressable
-          onPress={() => onDrink(500)}
+          onPress={() => onDrink?.(500)}
           disabled={busy}
           accessibilityRole="button"
           accessibilityLabel="Add 500 millilitres of water"
@@ -344,14 +358,16 @@ function WaterSection({
           </Pressable>
         ) : null}
       </View>
+        </>
+      ) : null}
     </Section>
   );
 }
 
-function PhotosSection({ day, onAdd }: { day: MyDay; onAdd: (type: MealType) => void }) {
+function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) => void }) {
   const count = day.meals.length;
   return (
-    <Section icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title="Meal photos" status={count > 0 ? `${count} added` : 'For your coach'}>
+    <Section icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title="Meal photos" status={count > 0 ? `${count} added` : onAdd ? 'For your coach' : 'None'}>
       <View className="flex-row" style={{ gap: 10 }}>
         {PHOTO_TYPES.map((type) => {
           const mine = day.meals.filter((m) => m.mealType === type);
@@ -359,9 +375,10 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd: (type: MealType) => 
           return (
             <Pressable
               key={type}
-              onPress={() => onAdd(type)}
-              accessibilityRole="button"
-              accessibilityLabel={`${MEAL_LABEL[type]}: ${mine.length ? `${mine.length} added, add another` : 'add a photo'}`}
+              onPress={() => onAdd?.(type)}
+              disabled={!onAdd}
+              accessibilityRole={onAdd ? 'button' : 'image'}
+              accessibilityLabel={`${MEAL_LABEL[type]}: ${mine.length ? `${mine.length} added${onAdd ? ', add another' : ''}` : onAdd ? 'add a photo' : 'no photo'}`}
               className="flex-1 active:opacity-70">
               <View
                 className="items-center justify-center overflow-hidden"
@@ -386,7 +403,7 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd: (type: MealType) => 
                 ) : shot ? (
                   <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor={BRAND} size={20} />
                 ) : (
-                  <SymbolView name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} tintColor={MUTED} size={20} />
+                  <SymbolView name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} tintColor={onAdd ? MUTED : 'rgba(143,163,150,0.35)'} size={20} />
                 )}
                 {shot ? (
                   <View className="absolute items-center justify-center" style={{ right: 5, top: 5, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 4, backgroundColor: BRAND }}>
@@ -411,15 +428,16 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd: (type: MealType) => 
   );
 }
 
-function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onOpen: () => void }) {
+function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onOpen?: () => void }) {
   const { stepsDone } = dayCounts(day);
   const { value, goal } = day.steps;
   const ratio = value != null && goal > 0 ? Math.min(1, value / goal) : 0;
   return (
     <Pressable
       onPress={onOpen}
-      accessibilityRole="button"
-      accessibilityLabel={`Steps, ${value == null ? 'not synced yet' : value.toLocaleString(locale)}${goal > 0 ? ` of ${goal.toLocaleString(locale)}` : ''}. Opens steps`}
+      disabled={!onOpen}
+      accessibilityRole={onOpen ? 'button' : 'text'}
+      accessibilityLabel={`Steps, ${value == null ? 'not counted' : value.toLocaleString(locale)}${goal > 0 ? ` of ${goal.toLocaleString(locale)}` : ''}${onOpen ? '. Opens steps' : ''}`}
       className="active:opacity-80">
       <Section
         icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
@@ -437,14 +455,16 @@ function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onO
               </Text>
             ) : null}
           </Text>
-          <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor={MUTED} size={14} />
+          {onOpen ? <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor={MUTED} size={14} /> : null}
         </View>
         <View className="overflow-hidden rounded-full" style={{ height: 8, marginTop: 10, backgroundColor: TRACK }}>
           <View style={{ height: 8, borderRadius: 4, width: `${ratio * 100}%`, backgroundColor: STEPS }} />
         </View>
-        <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
-          {value == null ? 'Not synced yet. Tap to open.' : 'Counted by your phone. Tap for history.'}
-        </Text>
+        {onOpen ? (
+          <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
+            {value == null ? 'Not synced yet. Tap to open.' : 'Counted by your phone. Tap for history.'}
+          </Text>
+        ) : null}
       </Section>
     </Pressable>
   );
@@ -455,21 +475,24 @@ export type ChecklistProps = {
   locale: string;
   pending: Set<string>;
   onToggle: (item: DayItem) => void;
-  onStart: () => void;
-  onDrink: (ml: number) => void;
-  onUndoDrink: () => void;
-  waterBusy: boolean;
-  lastDrinkMl: number | null;
-  onOpenSteps: () => void;
-  onAddPhoto: (type: MealType) => void;
+  /** false = the meals are shown but cannot be ticked (a day that has not come yet). Default true. */
+  canTick?: boolean;
+  // Each of these is optional: leave one out and that card only shows the day (used for past days in Activity).
+  onStart?: () => void;
+  onDrink?: (ml: number) => void;
+  onUndoDrink?: () => void;
+  waterBusy?: boolean;
+  lastDrinkMl?: number | null;
+  onOpenSteps?: () => void;
+  onAddPhoto?: (type: MealType) => void;
 };
 
 /** The day, one card per thing: workout, meals to tick, meal photos, water glasses, steps. */
-export function Checklist({ day, locale, pending, onToggle, onStart, onDrink, onUndoDrink, waterBusy, lastDrinkMl, onOpenSteps, onAddPhoto }: ChecklistProps) {
+export function Checklist({ day, locale, pending, onToggle, canTick = true, onStart, onDrink, onUndoDrink, waterBusy = false, lastDrinkMl = null, onOpenSteps, onAddPhoto }: ChecklistProps) {
   return (
     <>
       <WorkoutSection day={day} onStart={onStart} />
-      <MealsSection day={day} locale={locale} pending={pending} onToggle={onToggle} />
+      <MealsSection day={day} locale={locale} pending={pending} canTick={canTick} onToggle={onToggle} />
       <PhotosSection day={day} onAdd={onAddPhoto} />
       <WaterSection day={day} busy={waterBusy} lastDrinkMl={lastDrinkMl} onDrink={onDrink} onUndo={onUndoDrink} />
       <StepsSection day={day} locale={locale} onOpen={onOpenSteps} />
