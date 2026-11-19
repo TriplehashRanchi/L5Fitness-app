@@ -119,7 +119,7 @@ export function WeightTrend({ history, targetKg, locale, max = 12 }: { history: 
               <Path d={area} fill="url(#weight-fill)" />
               <Path d={line} stroke={BRAND} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" />
               {values.map((v, i) =>
-                i === last ? null : <Circle key={entries[i].id} cx={x(i)} cy={y(v)} r={3} fill="#0b1a11" stroke={BRAND} strokeWidth={2} />
+                i === last ? null : <Circle key={entries[i].id} cx={x(i)} cy={y(v)} r={3} fill="#000000" stroke={BRAND} strokeWidth={2} />
               )}
               <Circle cx={x(last)} cy={y(values[last])} r={9} fill={BRAND} opacity={0.25} />
               <Circle cx={x(last)} cy={y(values[last])} r={5} fill={BRAND} />
@@ -179,7 +179,7 @@ export function BmiScale({ value }: { value: number }) {
             borderRadius: 9,
             backgroundColor: '#ffffff',
             borderWidth: 4,
-            borderColor: '#0b1a11',
+            borderColor: '#000000',
           }}
         />
       </View>

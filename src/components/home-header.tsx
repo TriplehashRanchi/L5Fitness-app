@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -156,6 +156,7 @@ export function HomeHeader({
   onOffsetChange,
   onNotifications,
   onProfile,
+  hero,
 }: {
   userName: string;
   image?: string | null;
@@ -167,6 +168,8 @@ export function HomeHeader({
   onOffsetChange: (offset: number) => void;
   onNotifications: () => void;
   onProfile: () => void;
+  /** Shown under the greeting, above the calendar. */
+  hero?: ReactNode;
 }) {
   const days = getWeekDays(addDays(today, offset * 7), firstWeekday);
   const shownMonth = monthYear(days[3], locale);
@@ -193,6 +196,8 @@ export function HomeHeader({
           </Pressable>
         </View>
       </View>
+
+      {hero}
 
       <View className="mt-5 flex-row items-center justify-between">
         <DisplayText {...COMPACT_TEXT} className="text-xl tracking-tight text-white" numberOfLines={1}>

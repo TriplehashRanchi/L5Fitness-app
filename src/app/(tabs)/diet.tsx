@@ -4,16 +4,16 @@ import { GreenBackground } from '@/components/green-background';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClientsList } from '@/components/clients-list';
-import { WeekStrip } from '@/components/week-strip';
+import { WeekPicker } from '@/components/day-plan/week-picker';
 import { BottomTabInset } from '@/constants/theme';
 import { useForegroundReload } from '@/hooks/use-foreground-reload';
 import { useDeviceClock } from '@/hooks/use-device-clock';
-import { formatLongDate, getWeekDays, getZonedParts, toDayKey } from '@/lib/datetime';
+import { formatLongDate, getWeekDays, getZonedParts, toDayKey, type CalendarDay } from '@/lib/datetime';
 import { messageFrom } from '@/lib/http';
 import {
   getDiet,
@@ -43,12 +43,11 @@ function MyDiet() {
   const { now, format, firstWeekday } = useDeviceClock();
 
   const todayParts = getZonedParts(now, format.timeZone);
-  const todayKey = toDayKey(todayParts);
-  const week = getWeekDays(todayParts, firstWeekday);
-  const weekStart = toDayKey(week[0]);
-
-  const [selected, setSelected] = useState<string | null>(null);
-  const day = selected ?? todayKey;
+  // The same calendar as Home and Activity: any day of any week, with arrows to move a week at a time.
+  const [picked, setPicked] = useState<CalendarDay | null>(null);
+  const selectedDay: CalendarDay = picked ?? todayParts;
+  const day = toDayKey(selectedDay);
+  const weekStart = toDayKey(getWeekDays(selectedDay, firstWeekday)[0]);
 
   const [data, setData] = useState<DietDay | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +114,7 @@ function MyDiet() {
   const percent = total ? Math.round((doneCount / total) * 100) : 0;
   const planned = items.reduce((sum, i) => sum + (i.calories ?? 0), 0);
   const selectedDate = new Date(`${day}T12:00:00Z`);
+  const planDays = useMemo(() => new Set((data?.week ?? []).filter((w) => w.total > 0).map((w) => w.day)), [data?.week]);
 
   return (
     <View className="flex-1 bg-ink">
@@ -130,16 +130,15 @@ function MyDiet() {
         }}>
         <PageHeading title="Your diet" subtitle="A simple plan for your day." />
 
-        <View className="mt-5 px-5">
-          <WeekStrip
-            days={week}
-            summary={data?.week ?? []}
-            selected={day}
-            todayKey={todayKey}
-            locale={format.locale}
-            onSelect={setSelected}
-          />
-        </View>
+        <WeekPicker
+          selected={selectedDay}
+          today={todayParts}
+          firstWeekday={firstWeekday}
+          locale={format.locale}
+          onSelect={setPicked}
+          // a dot under each day that has a diet plan
+          marked={planDays}
+        />
 
         {error || notice ? (
           <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">

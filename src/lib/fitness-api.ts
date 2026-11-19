@@ -240,6 +240,25 @@ export function getStepHistory(to: string, days = 30) {
   return api<StepHistory>(`/me/steps?to=${to}&days=${days}`);
 }
 
+export type ActivityDay = {
+  day: string;
+  steps: number | null;
+  waterMl: number;
+  /** meal photos or notes logged */
+  meals: number;
+  dietPlanned: number;
+  dietDone: number;
+  workouts: number;
+  workoutMinutes: number;
+  workoutCalories: number;
+};
+export type ActivityRange = { from: string; to: string; goals: { steps: number; waterMl: number }; days: ActivityDay[] };
+
+/** One row per day for the `days` days up to `to` (YYYY-MM-DD), oldest first: steps, water, meals and workouts. */
+export function getActivity(to: string, days = 30) {
+  return api<ActivityRange>(`/me/activity?to=${to}&days=${days}`);
+}
+
 /** Sends step counts so the coach can see them and they are kept. `entries` are 1 to 40 days, at most 35 days old. */
 export function putSteps(entries: { day: string; steps: number }[]) {
   return api('/me/steps', { method: 'PUT', body: { entries } });

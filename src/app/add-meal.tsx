@@ -4,7 +4,7 @@ import { GreenBackground } from '@/components/green-background';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -62,7 +62,7 @@ export default function AddMealScreen() {
   const { format } = useDeviceClock();
 
   // Opened from a meal's own tile (Today's plan), that meal is already chosen.
-  const { type } = useLocalSearchParams<{ type?: string }>();
+  const { type, camera } = useLocalSearchParams<{ type?: string; camera?: string }>();
   const [mealType, setMealType] = useState<MealType>(() =>
     TYPES.includes(type as MealType) ? (type as MealType) : guessType(new Date().getHours())
   );
@@ -106,6 +106,15 @@ export default function AddMealScreen() {
       setError('Could not open the ' + (source === 'camera' ? 'camera' : 'photo library') + '. Please try again.');
     }
   };
+
+  // Opened from Home's "Add meal" button: go straight to the camera, once. The photo comes back to this
+  // screen, where the meal is saved.
+  const openedCamera = useRef(false);
+  useEffect(() => {
+    if (camera !== '1' || openedCamera.current) return;
+    openedCamera.current = true;
+    void pick('camera');
+  }, [camera]);
 
   const save = async () => {
     if (!canSave) return;

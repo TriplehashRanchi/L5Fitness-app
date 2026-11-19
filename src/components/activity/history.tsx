@@ -1,49 +1,58 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
+import { DisplayText } from '@/components/display-text';
 import { dayLabel, formatTime, type FormatOptions } from '@/lib/datetime';
 import type { History, HistoryDay } from '@/lib/wellness-api';
 
-const BRAND = '#3ddc68';
 const HAIRLINE = 'rgba(255,255,255,0.07)';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 /** 135 → "2h 15m", 45 → "45m". */
 export const hoursMinutes = (min: number) => (min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`);
 
-function Stat({ icon, color, value, label, first }: { icon: SymbolViewProps['name']; color: string; value: string; label: string; first?: boolean }) {
+const ICON_TINT = '#e8efe9';
+
+/** One all-time number: its name and a line icon above, the number large below. */
+function Stat({ icon, value, unit, label }: { icon: SymbolViewProps['name']; value: string; unit?: string; label: string }) {
   return (
     <View
       accessible
-      accessibilityLabel={`${label}: ${value}`}
-      className="flex-1 items-center"
-      style={{ paddingVertical: 4, borderLeftWidth: first ? 0 : 1, borderLeftColor: HAIRLINE }}>
-      <View className="items-center justify-center" style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: `${color}26` }}>
-        <SymbolView name={icon} tintColor={color} size={17} />
+      accessibilityLabel={`${label}: ${value}${unit ? ` ${unit}` : ''}`}
+      className="flex-1 rounded-3xl border border-white/5 bg-card"
+      style={{ padding: 16 }}>
+      <View className="flex-row items-center justify-between">
+        <Text {...COMPACT_TEXT} numberOfLines={1} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1.1 }}>
+          {label}
+        </Text>
+        <SymbolView name={icon} tintColor={ICON_TINT} size={16} />
       </View>
-      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="font-black text-white" style={{ fontSize: 20, marginTop: 8 }}>
-        {value}
-      </Text>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="text-muted" style={{ fontSize: 12, marginTop: 1 }}>
-        {label}
-      </Text>
+      <View className="flex-row items-baseline" style={{ gap: 5, marginTop: 10 }}>
+        <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-white" style={{ fontSize: 28, lineHeight: 34 }}>
+          {value}
+        </DisplayText>
+        {unit ? (
+          <Text {...COMPACT_TEXT} className="font-semibold text-muted" style={{ fontSize: 13 }}>
+            {unit}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }
 
-/** All-time totals in one card: workouts, time, calories, active days. */
+/** All-time totals as four tiles: workouts, time, calories, active days. */
 export function HistoryStats({ summary, locale }: { summary: NonNullable<History['summary']>; locale: string }) {
   return (
-    <View className="mx-5 flex-row rounded-3xl border border-white/5 bg-card" style={{ paddingVertical: 16 }}>
-      <Stat first value={String(summary.workouts)} label="Workouts" icon={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }} color={BRAND} />
-      <Stat value={hoursMinutes(summary.minutes)} label="Time" icon={{ ios: 'timer', android: 'timer', web: 'timer' }} color="#38bdf8" />
-      <Stat
-        value={summary.calories.toLocaleString(locale)}
-        label="kcal"
-        icon={{ ios: 'flame.fill', android: 'local_fire_department', web: 'local_fire_department' }}
-        color="#fb923c"
-      />
-      <Stat value={String(summary.activeDays)} label="Active days" icon={{ ios: 'calendar', android: 'event_available', web: 'event_available' }} color="#fbbf24" />
+    <View className="mx-5" style={{ gap: 10 }}>
+      <View className="flex-row" style={{ gap: 10 }}>
+        <Stat label="Workouts" value={String(summary.workouts)} icon={{ ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' }} />
+        <Stat label="Time" value={hoursMinutes(summary.minutes)} icon={{ ios: 'timer', android: 'timer', web: 'timer' }} />
+      </View>
+      <View className="flex-row" style={{ gap: 10 }}>
+        <Stat label="Burned" value={summary.calories.toLocaleString(locale)} unit="kcal" icon={{ ios: 'flame', android: 'local_fire_department', web: 'local_fire_department' }} />
+        <Stat label="Active days" value={String(summary.activeDays)} icon={{ ios: 'calendar', android: 'event_available', web: 'event_available' }} />
+      </View>
     </View>
   );
 }
@@ -58,7 +67,7 @@ const FILTERS: { id: HistoryFilter; label: string; a11y: string }[] = [
 /** One pill with three choices; the chosen one is filled. */
 export function HistoryFilterBar({ value, onChange }: { value: HistoryFilter; onChange: (f: HistoryFilter) => void }) {
   return (
-    <View className="mx-5 flex-row rounded-full bg-card" style={{ padding: 4, marginTop: 14 }} accessibilityRole="tablist">
+    <View className="mx-5 flex-row rounded-full bg-card" style={{ padding: 4 }} accessibilityRole="tablist">
       {FILTERS.map((f) => {
         const on = f.id === value;
         return (
@@ -81,17 +90,35 @@ export function HistoryFilterBar({ value, onChange }: { value: HistoryFilter; on
 }
 
 /** One day of the logbook: the date with its totals, then each workout on a line. */
-export function HistoryDayCard({ item, todayKey, format }: { item: HistoryDay; todayKey: string; format: FormatOptions }) {
+export function HistoryDayCard({
+  item,
+  todayKey,
+  format,
+  onOpen,
+}: {
+  item: HistoryDay;
+  todayKey: string;
+  format: FormatOptions;
+  /** Opens this day's full picture (workout, meals, water, steps). */
+  onOpen?: () => void;
+}) {
   return (
     <View className="mx-5 mb-3 rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
-      <View className="flex-row items-center justify-between" style={{ gap: 12, marginBottom: 4 }}>
-        <Text {...COMPACT_TEXT} accessibilityRole="header" className="flex-1 font-bold text-white" style={{ fontSize: 16 }} numberOfLines={1}>
+      <Pressable
+        onPress={onOpen}
+        disabled={!onOpen}
+        accessibilityRole={onOpen ? 'button' : 'header'}
+        accessibilityLabel={`${dayLabel(item.day, todayKey, format.locale)}, ${hoursMinutes(item.totalMinutes)}, ${item.totalCalories} kilocalories${onOpen ? '. Opens that day' : ''}`}
+        className="flex-row items-center justify-between active:opacity-60"
+        style={{ gap: 12, minHeight: 36, marginBottom: 2 }}>
+        <Text {...COMPACT_TEXT} className="flex-1 font-bold text-white" style={{ fontSize: 16 }} numberOfLines={1}>
           {dayLabel(item.day, todayKey, format.locale)}
         </Text>
         <Text {...COMPACT_TEXT} className="font-semibold text-muted" style={{ fontSize: 13 }}>
           {hoursMinutes(item.totalMinutes)} · {item.totalCalories.toLocaleString(format.locale)} kcal
         </Text>
-      </View>
+        {onOpen ? <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor="#8fa396" size={12} /> : null}
+      </Pressable>
       {item.workouts.map((w, i) => (
         <View
           key={w.id}
@@ -99,8 +126,8 @@ export function HistoryDayCard({ item, todayKey, format }: { item: HistoryDay; t
           accessibilityLabel={`${w.title}, ${formatTime(new Date(w.startedAt), format)}, ${w.durationMin} minutes, ${w.calories} kilocalories`}
           className="flex-row items-center"
           style={{ gap: 12, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: HAIRLINE }}>
-          <View className="items-center justify-center" style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(61,220,104,0.15)' }}>
-            <SymbolView name={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }} tintColor={BRAND} size={18} />
+          <View className="items-center justify-center" style={{ width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
+            <SymbolView name={{ ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' }} tintColor={ICON_TINT} size={18} />
           </View>
           <View className="flex-1">
             <Text {...COMPACT_TEXT} numberOfLines={1} className="font-semibold text-white" style={{ fontSize: 15 }}>

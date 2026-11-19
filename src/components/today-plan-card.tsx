@@ -2,14 +2,11 @@ import { router } from 'expo-router';
 import type { Dispatch, SetStateAction } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { CardHeader } from '@/components/today-card/card-header';
 import { DietBlock } from '@/components/today-card/diet-block';
-import { PhotosBlock } from '@/components/today-card/photos-block';
 import { todayProgress } from '@/components/today-card/plan-progress';
-import { StepsBlock, type StepsConnection } from '@/components/today-card/steps-block';
+import { DisplayText } from '@/components/display-text';
 import { COMPACT_TEXT } from '@/components/today-card/ui';
 import { useTodayCard } from '@/components/today-card/use-today-card';
-import { WaterBlock } from '@/components/today-card/water-block';
 import { WorkoutBlock } from '@/components/today-card/workout-block';
 import { toDayKey, type CalendarDay } from '@/lib/datetime';
 import type { Home } from '@/lib/fitness-api';
@@ -30,47 +27,40 @@ function dateLabelFor(day: CalendarDay, locale: string) {
   }
 }
 
-/** The one card on Home: today's workout, diet, water, steps and meal photos, with a quick action for each. */
+/**
+ * Today's plan on Home: the workout and the diet, each with its quick action.
+ * Water, steps, calories and meal photos live in the body section at the top of Home, so they are not repeated here.
+ */
 export function TodayPlanCard({
   data,
   setData,
   today,
   locale,
-  deviceSteps,
-  connection,
   workoutActive,
-  waterBusy,
-  onAddWater,
-  onUndoWater,
   onStartWorkout,
 }: {
   data: Home;
   setData: Dispatch<SetStateAction<Home | null>>;
   today: CalendarDay;
   locale: string;
-  /** What the phone's pedometer counted today, or null. */
-  deviceSteps: number | null;
-  connection: StepsConnection;
   workoutActive: boolean;
-  waterBusy: boolean;
-  /** Each resolves to an error message, or null when saved. */
-  onAddWater: (ml: number) => Promise<string | null>;
-  onUndoWater: () => Promise<string | null>;
   onStartWorkout: () => void;
 }) {
   const todayKey = toDayKey(today);
   const card = useTodayCard(setData, todayKey);
-  const progress = todayProgress(data, deviceSteps);
+  const progress = todayProgress(data, null);
   const dateLabel = dateLabelFor(today, locale);
 
   return (
     <View className="mx-5 mb-5 rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
-      <CardHeader
-        dateLabel={dateLabel}
-        percent={progress.percent}
-        done={progress.done}
-        total={progress.total}
-      />
+      <View className="flex-row items-baseline justify-between gap-3">
+        <DisplayText {...COMPACT_TEXT} numberOfLines={1} className="text-[22px] leading-7 tracking-tight text-white">
+          Today’s plan
+        </DisplayText>
+        <Text {...COMPACT_TEXT} numberOfLines={1} className="text-sm text-muted">
+          {dateLabel}
+        </Text>
+      </View>
       <View className="mt-3">
         <WorkoutBlock
           plan={data.plan}
@@ -89,19 +79,6 @@ export function TodayPlanCard({
           onToggle={card.toggleItem}
           onOpen={() => router.navigate('/diet')}
         />
-        <WaterBlock water={data.water} busy={waterBusy} onAdd={onAddWater} onUndo={onUndoWater} />
-        <StepsBlock
-          steps={progress.steps}
-          goal={progress.stepGoal}
-          locale={locale}
-          connection={connection}
-          saving={card.savingSteps}
-          error={card.stepsError}
-          onSave={card.saveSteps}
-          onClearError={card.clearStepsError}
-          onHistory={() => router.push('/steps' as never)}
-        />
-        <PhotosBlock meals={data.meals} onAdd={() => router.push('/add-meal')} />
       </View>
       <Pressable
         onPress={() => router.push('/today-plan' as never)}

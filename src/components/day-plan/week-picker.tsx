@@ -2,7 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { DisplayText } from '@/components/display-text';
 import { monthYear, WeekArrows } from '@/components/home-header';
-import { addDays, formatWeekday, getWeekDays, isSameDay, type CalendarDay } from '@/lib/datetime';
+import { addDays, formatWeekday, getWeekDays, isSameDay, toDayKey, type CalendarDay } from '@/lib/datetime';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -13,12 +13,15 @@ export function WeekPicker({
   firstWeekday,
   locale,
   onSelect,
+  marked,
 }: {
   selected: CalendarDay;
   today: CalendarDay;
   firstWeekday: number;
   locale: string;
   onSelect: (day: CalendarDay) => void;
+  /** Days (YYYY-MM-DD) that get a small dot: the ones with a logged workout. */
+  marked?: ReadonlySet<string>;
 }) {
   const days = getWeekDays(selected, firstWeekday);
   return (
@@ -33,13 +36,14 @@ export function WeekPicker({
         {days.map((d) => {
           const isSel = isSameDay(d, selected);
           const isToday = isSameDay(d, today);
+          const hasDot = marked?.has(toDayKey(d)) ?? false;
           return (
             <Pressable
               key={`${d.year}-${d.month}-${d.day}`}
               onPress={() => onSelect(d)}
               accessibilityRole="button"
               accessibilityState={{ selected: isSel }}
-              accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${isToday ? ', today' : ''}`}
+              accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${isToday ? ', today' : ''}${hasDot ? ', workout logged' : ''}`}
               className="min-h-[44px] flex-1 items-center gap-2">
               <Text {...COMPACT_TEXT} className={`text-sm font-semibold ${isSel ? 'text-white' : 'text-muted'}`}>
                 {formatWeekday(d, locale, 'narrow')}
@@ -49,6 +53,7 @@ export function WeekPicker({
                   {d.day}
                 </Text>
               </View>
+              <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: -2, backgroundColor: hasDot ? '#3ddc68' : 'transparent' }} />
             </Pressable>
           );
         })}

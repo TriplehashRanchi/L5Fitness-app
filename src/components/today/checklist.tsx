@@ -1,17 +1,19 @@
 import { Image } from 'expo-image';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { ClipPath, Defs, Path, Rect } from 'react-native-svg';
 
+import { BodyAvatar } from '@/components/body-avatar';
 import { CompleteProfileButton, DIET_AFTER_PROFILE } from '@/components/complete-profile-button';
+import { bmi } from '@/lib/body';
 import { dayCounts } from '@/lib/day-plan';
 import { MEAL_LABEL, type DayItem, type MealType, type MyDay } from '@/lib/fitness-api';
 import { emptyPlanCopy } from '@/lib/plan-copy';
-import { calorieSummary } from '@/lib/today-tasks';
+import { calorieSummary, nextTask } from '@/lib/today-tasks';
 import { formatWater } from '@/lib/water';
 import { SLOT_LABEL, SLOT_ORDER } from '@/lib/wellness-api';
+import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -23,16 +25,22 @@ const HAIRLINE = 'rgba(255,255,255,0.07)';
 const TRACK = 'rgba(255,255,255,0.08)';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const GLASS_ML = 250;
-const MAX_GLASSES = 16;
 const PHOTO_TYPES: MealType[] = ['breakfast', 'lunch', 'snack', 'dinner'];
 
-/** A card with a coloured icon, a title, and a short status on the right. */
+/** Which part of the day is open. One at a time, so the day stays a short list. */
+const OpenPart = createContext<{ open: string | null; setOpen: (title: string | null) => void }>({ open: null, setOpen: () => {} });
+
+/**
+ * One part of the day as a row in the day's list: its icon, its name and where it stands. Tapping the row
+ * opens it in place to show the detail and the things to do; opening one closes the one that was open.
+ */
 function Section({
   icon,
   color,
   title,
   status,
   done,
+  first,
   children,
 }: {
   icon: SymbolViewProps['name'];
@@ -40,31 +48,51 @@ function Section({
   title: string;
   status?: string | null;
   done?: boolean;
+  /** the first row has no line above it */
+  first?: boolean;
   children: ReactNode;
 }) {
+  const { open, setOpen } = useContext(OpenPart);
+  const shown = open === title;
   return (
-    <View className="mx-5 mb-4 rounded-3xl border border-white/5 bg-card" style={{ padding: 16 }}>
-      <View className="flex-row items-center" style={{ gap: 12, marginBottom: 12 }}>
-        <View className="items-center justify-center" style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: `${color}26` }}>
-          <SymbolView name={icon} tintColor={color} size={18} />
+    <View style={first ? null : { borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+      <Pressable
+        onPress={() => setOpen(shown ? null : title)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: shown }}
+        accessibilityLabel={`${title}${done ? ', done' : ''}${status ? `, ${status}` : ''}`}
+        className="flex-row items-center active:opacity-60"
+        style={{ gap: 12, minHeight: 66, paddingHorizontal: 16 }}>
+        <View
+          className="items-center justify-center"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            borderWidth: done ? 0 : 1,
+            borderColor: 'rgba(255,255,255,0.14)',
+            backgroundColor: done ? BRAND : 'rgba(255,255,255,0.04)',
+          }}>
+          <SymbolView name={done ? { ios: 'checkmark', android: 'check', web: 'check' } : icon} tintColor={done ? INK : '#e8efe9'} size={done ? 16 : 18} />
         </View>
-        <Text {...COMPACT_TEXT} accessibilityRole="header" className="flex-1 font-bold text-white" style={{ fontSize: 17 }}>
-          {title}
-        </Text>
-        {done ? (
-          <View className="flex-row items-center rounded-full" style={{ gap: 5, paddingHorizontal: 10, height: 26, backgroundColor: `${color}26` }}>
-            <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} tintColor={color} size={11} />
-            <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 12, color }}>
-              Done
-            </Text>
-          </View>
-        ) : status ? (
-          <Text {...COMPACT_TEXT} className="font-bold text-muted" style={{ fontSize: 13 }}>
-            {status}
+        <View className="flex-1">
+          <Text {...COMPACT_TEXT} accessibilityRole="header" className={`font-bold ${done ? 'text-muted' : 'text-white'}`} style={{ fontSize: 16 }}>
+            {title}
           </Text>
-        ) : null}
-      </View>
-      {children}
+          {/* the number is always on the row, so nothing has to be opened to see how the day stands */}
+          {done || status ? (
+            <Text {...COMPACT_TEXT} numberOfLines={1} className="font-semibold" style={{ fontSize: 13, marginTop: 1, color: done ? color : MUTED }}>
+              {done ? (status ? `Done · ${status}` : 'Done') : status}
+            </Text>
+          ) : null}
+        </View>
+        <SymbolView
+          name={shown ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }}
+          tintColor={MUTED}
+          size={12}
+        />
+      </Pressable>
+      {shown ? <View style={{ paddingHorizontal: 16, paddingBottom: 18 }}>{children}</View> : null}
     </View>
   );
 }
@@ -91,10 +119,10 @@ function Tick({ done }: { done: boolean }) {
 function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) {
   const [open, setOpen] = useState(false);
   const t = day.training;
-  const icon = { ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' } as const;
+  const icon = { ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' } as const;
   if (!t) {
     return (
-      <Section icon={icon} color={BRAND} title="Workout">
+      <Section first icon={icon} color={BRAND} title="Workout">
         <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
           {day.coaching.status === 'accepted' ? 'No workout planned for today.' : emptyPlanCopy(day.coaching, false).line}
         </Text>
@@ -107,7 +135,7 @@ function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) 
     .map((l) => l.trim().replace(/^[-•*]\s*/, ''))
     .filter(Boolean);
   return (
-    <Section icon={icon} color={BRAND} title="Workout" done={t.done}>
+    <Section first icon={icon} color={BRAND} title="Workout" status={`${t.title} · ${t.durationMin} min`} done={t.done}>
       <Text {...COMPACT_TEXT} className={`font-bold ${t.done ? 'text-muted' : 'text-white'}`} style={{ fontSize: 20, lineHeight: 26 }}>
         {t.title}
       </Text>
@@ -244,21 +272,17 @@ function MealsSection({
   );
 }
 
-/** One drinking glass, filled from the bottom by `fill` (0 to 1). */
-function Glass({ fill, id }: { fill: number; id: string }) {
-  const shape = 'M3 2 H21 L18.6 28 Q18.5 30 16.5 30 H7.5 Q5.5 30 5.4 28 Z';
-  const top = 2 + 28 * (1 - fill);
+/** One line of the water explanation: what the number is, then the number. */
+function WaterFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <Svg width={26} height={34} viewBox="0 0 24 32">
-      <Defs>
-        <ClipPath id={id}>
-          <Path d={shape} />
-        </ClipPath>
-      </Defs>
-      <Path d={shape} fill="rgba(56,189,248,0.08)" />
-      {fill > 0 ? <Rect x={0} y={top} width={24} height={32 - top} fill={WATER} clipPath={`url(#${id})`} /> : null}
-      <Path d={shape} fill="none" stroke={fill > 0 ? WATER : 'rgba(143,163,150,0.55)'} strokeWidth={1.6} strokeLinejoin="round" />
-    </Svg>
+    <View accessible accessibilityLabel={`${label}: ${value}`}>
+      <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 10, letterSpacing: 1.1 }}>
+        {label}
+      </Text>
+      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="font-bold" style={{ fontSize: strong ? 28 : 17, lineHeight: strong ? 34 : 23, color: strong ? WATER : '#ffffff' }}>
+        {value}
+      </Text>
+    </View>
   );
 }
 
@@ -278,49 +302,45 @@ function WaterSection({
   const { totalMl, goalMl } = day.water;
   const hasGoal = goalMl > 0;
   const done = hasGoal && totalMl >= goalMl;
-  const glasses = Math.min(MAX_GLASSES, Math.max(1, Math.ceil((hasGoal ? goalMl : 2000) / GLASS_ML)));
   const left = Math.max(0, goalMl - totalMl);
+  const glassesLeft = Math.ceil(left / GLASS_ML);
+  const percent = hasGoal ? Math.min(100, Math.round((totalMl / goalMl) * 100)) : 0;
+  const { profile } = useProfile();
+  const bmiValue = profile?.weightKg && profile?.heightCm ? bmi(profile.weightKg, profile.heightCm) : null;
   return (
     <Section
-      icon={{ ios: 'drop.fill', android: 'water_drop', web: 'water_drop' }}
+      icon={{ ios: 'drop', android: 'water_drop', web: 'water_drop' }}
       color={WATER}
       title="Water"
-      status={hasGoal ? `${formatWater(left)} to go` : null}
+      status={hasGoal ? `${formatWater(totalMl)} of ${formatWater(goalMl)}` : formatWater(totalMl)}
       done={done}>
-      <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 28, lineHeight: 34 }} accessibilityLabel={hasGoal ? `${formatWater(totalMl)} of ${formatWater(goalMl)}` : formatWater(totalMl)}>
-        {formatWater(totalMl)}
-        {hasGoal ? (
-          <Text className="font-semibold text-muted" style={{ fontSize: 15 }}>
-            {' '}
-            of {formatWater(goalMl)}
+      {/* The same body as on Home: it fills from the feet up as the day's water goal fills. */}
+      <View className="flex-row items-center" style={{ gap: 16 }}>
+        <BodyAvatar
+          bmi={bmiValue}
+          sex={profile?.sex}
+          fill={hasGoal ? Math.min(1, totalMl / goalMl) : 0}
+          color="#38e1f5"
+          height={230}
+          maxWidth={130}
+          label={`Body filled ${percent} percent with water`}
+        />
+        <View className="flex-1" style={{ gap: 12 }}>
+          <WaterFact strong label="Drunk so far" value={formatWater(totalMl)} />
+          {hasGoal ? (
+            <>
+              <WaterFact label="Goal for the day" value={formatWater(goalMl)} />
+              <WaterFact label={done ? 'Goal reached' : 'Still to drink'} value={done ? `${percent}%` : `${formatWater(left)} · about ${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'}`} />
+            </>
+          ) : null}
+          <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, lineHeight: 17 }}>
+            {done ? 'The body is full: you drank everything planned for this day.' : 'The body fills as you drink. A full body means the goal is reached.'}
           </Text>
-        ) : null}
-      </Text>
-
-      <View className="flex-row flex-wrap" style={{ marginTop: 12, marginHorizontal: -4 }}>
-        {Array.from({ length: glasses }, (_, i) => {
-          const fill = Math.min(1, Math.max(0, (totalMl - i * GLASS_ML) / GLASS_ML));
-          return (
-            <Pressable
-              key={i}
-              onPress={() => onDrink?.(GLASS_ML)}
-              disabled={!onDrink || busy || fill >= 1}
-              accessibilityRole="button"
-              accessibilityLabel={fill >= 1 ? `Glass ${i + 1}, drunk` : onDrink ? `Glass ${i + 1}, tap to add ${GLASS_ML} millilitres` : `Glass ${i + 1}, empty`}
-              className="items-center justify-center active:opacity-60"
-              style={{ width: '12.5%', height: 46 }}>
-              <Glass fill={fill} id={`glass-${i}`} />
-            </Pressable>
-          );
-        })}
+        </View>
       </View>
       {onDrink ? (
         <>
-      <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 4 }}>
-        Tap a glass to add {GLASS_ML} ml
-      </Text>
-
-      <View className="flex-row items-center" style={{ gap: 8, marginTop: 12 }}>
+      <View className="flex-row items-center" style={{ gap: 8, marginTop: 16 }}>
         <Pressable
           onPress={() => onDrink?.(GLASS_ML)}
           disabled={busy}
@@ -367,7 +387,7 @@ function WaterSection({
 function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) => void }) {
   const count = day.meals.length;
   return (
-    <Section icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title="Meal photos" status={count > 0 ? `${count} added` : onAdd ? 'For your coach' : 'None'}>
+    <Section icon={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title="Meal photos" status={count > 0 ? `${count} added` : onAdd ? 'For your coach' : 'None'}>
       <View className="flex-row" style={{ gap: 10 }}>
         {PHOTO_TYPES.map((type) => {
           const mine = day.meals.filter((m) => m.mealType === type);
@@ -443,7 +463,7 @@ function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onO
         icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
         color={STEPS}
         title="Steps"
-        status={goal > 0 && value != null ? `${Math.max(0, goal - value).toLocaleString(locale)} to go` : null}
+        status={value == null ? 'Not counted yet' : goal > 0 ? `${value.toLocaleString(locale)} of ${goal.toLocaleString(locale)}` : value.toLocaleString(locale)}
         done={stepsDone}>
         <View className="flex-row items-end justify-between">
           <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 28, lineHeight: 34 }}>
@@ -487,15 +507,27 @@ export type ChecklistProps = {
   onAddPhoto?: (type: MealType) => void;
 };
 
-/** The day, one card per thing: workout, meals to tick, meal photos, water glasses, steps. */
+const PART_OF = { workout: 'Workout', meal: 'Meals', water: 'Water', steps: 'Steps' } as const;
+
+/**
+ * The day as one list: workout, meals, meal photos, water, steps. Each is a row that opens in place.
+ * The first thing still to do starts open; when everything is done, all rows start closed.
+ */
 export function Checklist({ day, locale, pending, onToggle, canTick = true, onStart, onDrink, onUndoDrink, waterBusy = false, lastDrinkMl = null, onOpenSteps, onAddPhoto }: ChecklistProps) {
+  const [open, setOpen] = useState<string | null>(() => {
+    const next = nextTask(day);
+    return next ? PART_OF[next.kind] : null;
+  });
+  const value = useMemo(() => ({ open, setOpen }), [open]);
   return (
-    <>
-      <WorkoutSection day={day} onStart={onStart} />
-      <MealsSection day={day} locale={locale} pending={pending} canTick={canTick} onToggle={onToggle} />
-      <PhotosSection day={day} onAdd={onAddPhoto} />
-      <WaterSection day={day} busy={waterBusy} lastDrinkMl={lastDrinkMl} onDrink={onDrink} onUndo={onUndoDrink} />
-      <StepsSection day={day} locale={locale} onOpen={onOpenSteps} />
-    </>
+    <OpenPart.Provider value={value}>
+      <View className="mx-5 mb-4 overflow-hidden rounded-3xl border border-white/5 bg-card">
+        <WorkoutSection day={day} onStart={onStart} />
+        <MealsSection day={day} locale={locale} pending={pending} canTick={canTick} onToggle={onToggle} />
+        <PhotosSection day={day} onAdd={onAddPhoto} />
+        <WaterSection day={day} busy={waterBusy} lastDrinkMl={lastDrinkMl} onDrink={onDrink} onUndo={onUndoDrink} />
+        <StepsSection day={day} locale={locale} onOpen={onOpenSteps} />
+      </View>
+    </OpenPart.Provider>
   );
 }

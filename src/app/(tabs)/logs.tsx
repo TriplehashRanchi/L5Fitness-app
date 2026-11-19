@@ -1,4 +1,5 @@
 import { HistoryDayCard, HistoryFilterBar, HistoryStats, type HistoryFilter } from '@/components/activity/history';
+import { MonthSection } from '@/components/activity/month';
 import { DaySkeleton } from '@/components/day-plan/day-skeleton';
 import { WeekPicker } from '@/components/day-plan/week-picker';
 import { DisplayText } from '@/components/display-text';
@@ -15,11 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomTabInset } from '@/constants/theme';
 import { useDeviceClock } from '@/hooks/use-device-clock';
-import { dayLabel, getZonedParts, toDayKey, type CalendarDay } from '@/lib/datetime';
+import { addDays, dayLabel, getZonedParts, toDayKey, type CalendarDay } from '@/lib/datetime';
 import { dayCounts } from '@/lib/day-plan';
 import { messageFrom } from '@/lib/http';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
 import { withDeviceSteps } from '@/lib/today-tasks';
+import { getActivity, type ActivityRange } from '@/lib/fitness-api';
 import { getHistory, type HistoryDay } from '@/lib/wellness-api';
 
 const BRAND = '#3ddc68';
@@ -29,11 +31,52 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 type Summary = NonNullable<Awaited<ReturnType<typeof getHistory>>['summary']>;
 
+type Mode = 'day' | 'history';
+const MODES: { id: Mode; label: string; icon: { ios: string; android: string; web: string } }[] = [
+  { id: 'day', label: 'Day', icon: { ios: 'calendar', android: 'calendar_today', web: 'calendar_today' } },
+  { id: 'history', label: 'History', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' } },
+];
+
+/** Day or History: the two things this tab does, one at a time. */
+function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <View className="flex-row rounded-full bg-card" style={{ padding: 3 }} accessibilityRole="tablist">
+      {MODES.map((m) => {
+        const on = m.id === value;
+        return (
+          <Pressable
+            key={m.id}
+            onPress={() => onChange(m.id)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            hitSlop={{ top: 6, bottom: 6 }}
+            className={`flex-row items-center justify-center rounded-full active:opacity-70 ${on ? 'bg-brand' : ''}`}
+            style={{ minHeight: 38, paddingHorizontal: 14, gap: 6 }}>
+            <SymbolView name={m.icon as never} tintColor={on ? INK : '#8fa396'} size={14} />
+            <Text {...COMPACT_TEXT} className={`font-bold ${on ? 'text-ink' : 'text-muted'}`} style={{ fontSize: 13 }}>
+              {m.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /**
- * The Activity tab. Top: any day of any week, shown with the same ring and cards as Today's plan
- * (today can be acted on; other days are only shown, except that past meals can still be ticked).
- * Below: the workout logbook.
+ * The Activity tab, in two views.
+ * Day: any day of any week, shown with the same ring and cards as Today's plan (today can be acted on;
+ * other days are only shown, except that past meals can still be ticked).
+ * History: the last seven days as a chart, the all-time totals, and the workout logbook.
  */
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <Text {...COMPACT_TEXT} accessibilityRole="header" className="mx-5 font-bold uppercase text-muted" style={{ fontSize: 12, letterSpacing: 1.2, marginTop: 22, marginBottom: 10 }}>
+      {children}
+    </Text>
+  );
+}
+
 export default function LogsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -58,7 +101,39 @@ export default function LogsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [filter, setFilter] = useState<HistoryFilter>('all');
+  const [mode, setMode] = useState<Mode>('day');
+  const listRef = useRef<FlatList<HistoryDay>>(null);
+  const openDay = (d: CalendarDay) => {
+    setPicked(d);
+    setMode('day');
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
   const latest = useRef(0);
+
+  // The last 30 days from the server: one light request. It marks the week strip and feeds the month card.
+  // (The phone's own step counts are read only when History is opened, inside the month card: that is 30
+  // reads of the health app, too heavy to do every time this tab is shown.)
+  const [month, setMonth] = useState<ActivityRange | null>(null);
+  const [monthError, setMonthError] = useState(false);
+  const monthLatest = useRef(0);
+  const loadMonth = useCallback(async () => {
+    const id = ++monthLatest.current;
+    try {
+      const next = await getActivity(todayKey, 30);
+      if (id !== monthLatest.current) return;
+      setMonth(next);
+      setMonthError(false);
+    } catch {
+      // keep showing the last month we had; say so only when there is nothing to show
+      if (id === monthLatest.current) setMonthError(true);
+    }
+  }, [todayKey]);
+  /** Days with a logged workout, for the dots under the week strip: the month's, plus older ones from the logbook. */
+  const logged = useMemo(() => {
+    const set = new Set((days ?? []).map((d) => d.day));
+    for (const d of month?.days ?? []) if (d.workouts > 0) set.add(d.day);
+    return set;
+  }, [days, month]);
 
   const loadFirst = useCallback(async () => {
     const id = ++latest.current;
@@ -78,7 +153,8 @@ export default function LogsScreen() {
   useFocusEffect(
     useCallback(() => {
       loadFirst();
-    }, [loadFirst])
+      loadMonth();
+    }, [loadFirst, loadMonth])
   );
 
   const loadMore = async () => {
@@ -97,49 +173,31 @@ export default function LogsScreen() {
 
   const refresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadFirst(), day.reload()]);
+    await Promise.all([loadFirst(), loadMonth(), day.reload()]);
     setRefreshing(false);
   };
 
-  const filteredDays = (days ?? []).filter((d) => {
-    if (filter === 'all') return true;
-    const dayDate = new Date(d.day);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - dayDate.getTime()) / 86_400_000);
-    if (filter === 'week') return diffDays <= 7;
-    if (filter === 'month') return diffDays <= 30;
-    return true;
-  });
+  // Day keys are YYYY-MM-DD, so comparing them as text compares the dates. "7 days" is today and the six before it.
+  const filteredDays = useMemo(() => {
+    if (filter === 'all') return days ?? [];
+    const from = toDayKey(addDays(today, filter === 'week' ? -6 : -29));
+    return (days ?? []).filter((d) => d.day >= from);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days, filter, todayKey]);
 
   const isWeb = Platform.OS === 'web';
   const header = (
     <View className="pb-3">
-      <View className="px-5 pt-3">
-        <DisplayText accessibilityRole="header" className="text-[32px] leading-10 tracking-tight text-white" numberOfLines={1}>
+      <View className="flex-row items-center justify-between px-5 pt-3" style={{ gap: 12 }}>
+        <DisplayText accessibilityRole="header" className="flex-1 text-[32px] leading-10 tracking-tight text-white" numberOfLines={1}>
           Activity
         </DisplayText>
+        <ModeSwitch value={mode} onChange={setMode} />
       </View>
-      <WeekPicker selected={selected} today={today} firstWeekday={firstWeekday} locale={format.locale} onSelect={setPicked} />
 
-      {/* Which day the cards below are about, and the way back to today. */}
-      <View className="mx-5 mb-3 flex-row items-center justify-between" style={{ minHeight: 36 }}>
-        <Text {...COMPACT_TEXT} accessibilityRole="header" className="font-bold text-white" style={{ fontSize: 18 }}>
-          {dayLabel(selectedKey, todayKey, format.locale)}
-        </Text>
-        {isToday ? null : (
-          <Pressable
-            onPress={() => setPicked(null)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Back to today"
-            className="items-center justify-center rounded-full active:opacity-70"
-            style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
-            <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
-              Today
-            </Text>
-          </Pressable>
-        )}
-      </View>
+      {mode === 'day' ? (
+        <>
+      <WeekPicker selected={selected} today={today} firstWeekday={firstWeekday} locale={format.locale} onSelect={setPicked} marked={logged} />
 
       {dayMessage ? (
         <View accessibilityRole="alert" className="mx-5 mb-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
@@ -153,12 +211,49 @@ export default function LogsScreen() {
         </View>
       ) : null}
 
+      {/* The way back to today is in the summary card; when that card cannot be shown, offer it here. */}
+      {!isToday && !shown && !day.loading ? (
+        <Pressable
+          onPress={() => setPicked(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Back to today"
+          className="mx-5 mb-3 self-start justify-center rounded-full active:opacity-70"
+          style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
+          <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
+            Today
+          </Text>
+        </Pressable>
+      ) : null}
+
       {day.loading ? (
         <DaySkeleton />
       ) : shown ? (
         <>
-          <DaySummary day={shown} percent={percent} locale={format.locale} />
+          <DaySummary
+            day={shown}
+            percent={percent}
+            locale={format.locale}
+            slim
+            title={dayLabel(selectedKey, todayKey, format.locale)}
+            action={
+              isToday ? null : (
+                <Pressable
+                  onPress={() => setPicked(null)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to today"
+                  className="items-center justify-center rounded-full active:opacity-70"
+                  style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
+                  <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
+                    Today
+                  </Text>
+                </Pressable>
+              )
+            }
+          />
           <Checklist
+            // a fresh checklist for each day, so one day's folded cards do not carry over to the next
+            key={selectedKey}
             day={shown}
             locale={format.locale}
             pending={day.pending}
@@ -176,15 +271,32 @@ export default function LogsScreen() {
         </>
       ) : null}
 
-      <View className="px-5" style={{ marginTop: 14, marginBottom: 12 }}>
-        <DisplayText {...COMPACT_TEXT} accessibilityRole="header" className="tracking-tight text-white" style={{ fontSize: 24, lineHeight: 30 }}>
-          History
-        </DisplayText>
-      </View>
-      {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
-      <HistoryFilterBar value={filter} onChange={setFilter} />
+        </>
+      ) : (
+        <>
+          <View style={{ height: 16 }} />
+          {month ? (
+            <MonthSection data={month} today={today} locale={format.locale} onOpenDay={openDay} />
+          ) : monthError ? (
+            <View accessibilityRole="alert" className="mx-5 rounded-3xl border border-white/5 bg-card" style={{ padding: 18 }}>
+              <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
+                The last 30 days could not be loaded
+              </Text>
+              <Pressable onPress={loadMonth} accessibilityRole="button" className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
+                <Text {...COMPACT_TEXT} className="text-sm font-bold text-ink">
+                  Try again
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
+          <SectionTitle>All time</SectionTitle>
+          {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
+          <SectionTitle>Workout log</SectionTitle>
+          <HistoryFilterBar value={filter} onChange={setFilter} />
+        </>
+      )}
 
-      {error ? (
+      {error && mode === 'history' ? (
         <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
           <Text className="text-sm font-semibold text-white">{error}</Text>
           <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text>
@@ -197,7 +309,8 @@ export default function LogsScreen() {
     <View className="flex-1" style={{ backgroundColor: '#000000' }}>
       <StatusBar style="light" />
       <FlatList
-        data={filteredDays}
+        ref={listRef}
+        data={mode === 'history' ? filteredDays : []}
         keyExtractor={(d) => d.day}
         ListHeaderComponent={header}
         contentContainerStyle={{
@@ -208,12 +321,22 @@ export default function LogsScreen() {
           paddingBottom: insets.bottom + (isWeb ? 0 : BottomTabInset) + 24,
         }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={BRAND} colors={[BRAND]} />}
-        onEndReached={loadMore}
+        onEndReached={mode === 'history' ? loadMore : undefined}
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => <HistoryDayCard item={item} todayKey={todayKey} format={format} />}
+        renderItem={({ item }) => (
+          <HistoryDayCard
+            item={item}
+            todayKey={todayKey}
+            format={format}
+            onOpen={() => {
+              const [y, m, d] = item.day.split('-').map(Number);
+              openDay({ year: y, month: m, day: d });
+            }}
+          />
+        )}
         ListEmptyComponent={
-          days === null ? (
+          mode === 'day' ? undefined : days === null ? (
             error ? undefined : (
               <View className="items-center py-14">
                 <ActivityIndicator color={BRAND} size="large" />

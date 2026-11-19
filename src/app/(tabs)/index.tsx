@@ -14,6 +14,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BodyHero } from '@/components/body-hero';
 import { HomeHeader } from '@/components/home-header';
 import { planCopy } from '@/lib/plan-copy';
 import { GoalsTile, StepsTile } from '@/components/home-summary-card';
@@ -261,6 +262,21 @@ export default function HomeScreen() {
           onOffsetChange={setWeekOffset}
           onNotifications={() => openInbox(true)}
           onProfile={onAvatarPress}
+          hero={
+            <BodyHero
+              data={data}
+              steps={steps.todaySteps}
+              waterBusy={busy === 'water'}
+              onAddWater={async (ml) => {
+                const problem = await onAddWater(ml);
+                if (problem) setNotice(problem);
+              }}
+              onUndoWater={async () => {
+                const problem = await onUndoWater();
+                if (problem) setNotice(problem);
+              }}
+            />
+          }
         />
 
         {/* Global Error/Notice banner */}
@@ -394,12 +410,7 @@ export default function HomeScreen() {
             setData={setData}
             today={today}
             locale={format.locale}
-            deviceSteps={steps.todaySteps}
-            connection={steps}
             workoutActive={!!active}
-            waterBusy={busy === 'water'}
-            onAddWater={onAddWater}
-            onUndoWater={onUndoWater}
             onStartWorkout={startWorkout}
           />
         ) : loading ? (

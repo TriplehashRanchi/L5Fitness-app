@@ -963,6 +963,7 @@ export function ProfileForm({
   skipping,
   skipError,
   skipLabel = 'Skip',
+  editing = false,
 }: {
   mode: 'setup' | 'edit';
   onDone?: () => void;
@@ -972,6 +973,12 @@ export function ProfileForm({
   skipError?: string | null;
   /** The word on that button ("Close" when the steps are opened again later). */
   skipLabel?: string;
+  /**
+   * Setup's one-question-at-a-time screens, used to change an existing profile: adds the health and privacy
+   * screen, a Save button at the top right that saves from any screen, a close button on the first screen,
+   * and lets the progress bar be tapped to jump to a screen.
+   */
+  editing?: boolean;
 }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -980,6 +987,7 @@ export function ProfileForm({
 
   const [form, setForm] = useState<Form>(() => initialForm(profile, mode === 'setup' ? new Date().getFullYear() - 25 : undefined));
   const [step, setStep] = useState(0);
+  const steps: readonly string[] = editing ? [...SETUP_STEPS, 'health'] : SETUP_STEPS;
   const [openSection, setOpenSection] = useState<number | null>(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1031,12 +1039,12 @@ export function ProfileForm({
   const setupStepFor = (section: number): number => {
     if (section === 1) return sexProblem() ? 1 : birthProblem() ? 2 : 3;
     if (section === 3) return form.activity ? 6 : 5;
-    return [0, 1, 4, 5, 6][section];
+    return [0, 1, 4, 5, 6, 7][section];
   };
 
   /** The problem with the answer on setup screen `index`, or null. */
   const setupProblem = (index: number): string | null => {
-    switch (SETUP_STEPS[index]) {
+    switch (steps[index]) {
       case 'goal': return problemIn(0);
       case 'sex': return sexProblem();
       case 'birth': return birthProblem();
@@ -1317,7 +1325,9 @@ export function ProfileForm({
     </View>,
   ];
 
-  const lastStep = step === SETUP_STEPS.length - 1;
+  // Changing a profile also covers health and privacy, which first-time setup leaves for later.
+  if (editing) setupSteps.push(sections[4]);
+  const lastStep = step === steps.length - 1;
 
   return (
     // Setup draws on the green background its screen provides; edit has to bring its own.
@@ -1338,10 +1348,36 @@ export function ProfileForm({
                   className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70">
                   <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={16} />
                 </Pressable>
+              ) : editing ? (
+                <Pressable
+                  onPress={onDone}
+                  disabled={busy}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close without saving"
+                  className="h-10 w-10 items-center justify-center rounded-full bg-white/10 active:opacity-70">
+                  <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor="white" size={14} />
+                </Pressable>
               ) : (
                 <View className="h-10 w-10" />
               )}
-              {onSkip ? (
+              {editing ? (
+                <Pressable
+                  onPress={submit}
+                  disabled={busy}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save changes"
+                  className="min-w-12 items-end py-1 active:opacity-60">
+                  {busy ? (
+                    <ActivityIndicator color={BRAND} size="small" />
+                  ) : (
+                    <Text {...COMPACT_TEXT} style={{ color: BRAND }} className="text-sm font-bold">
+                      Save
+                    </Text>
+                  )}
+                </Pressable>
+              ) : onSkip ? (
                 <Pressable
                   onPress={onSkip}
                   disabled={busy || skipping}
@@ -1368,20 +1404,36 @@ export function ProfileForm({
         ) : null}
         <ScrollView
           // The height and weight screens hold a scrolling ruler: the page itself must not scroll there, or it fights the ruler for your finger.
-          scrollEnabled={!(mode === 'setup' && (SETUP_STEPS[step] === 'height' || SETUP_STEPS[step] === 'weight'))}
+          scrollEnabled={!(mode === 'setup' && (steps[step] === 'height' || steps[step] === 'weight'))}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingTop: mode === 'setup' ? 16 : insets.top + 16, paddingBottom: 24, paddingHorizontal: 20, flexGrow: 1, width: '100%', maxWidth: 840, alignSelf: 'center' }}>
           {mode === 'setup' ? (
             <View className="mb-6">
               <View className="flex-row items-center justify-between">
                 <Text {...COMPACT_TEXT} style={{ color: BRAND }} className="text-xs font-bold uppercase tracking-[1px]">
-                  Step {step + 1} of {SETUP_STEPS.length}
+                  Step {step + 1} of {steps.length}
                 </Text>
               </View>
               <View className="mt-3 flex-row gap-1.5">
-                {SETUP_STEPS.map((name, i) => (
-                  <View key={name} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-[#3ddc68]' : 'bg-white/15'}`} />
-                ))}
+                {steps.map((name, i) =>
+                  editing ? (
+                    // When changing a profile, any screen can be opened straight from the bar.
+                    <Pressable
+                      key={name}
+                      onPress={() => {
+                        setError(null);
+                        setStep(i);
+                      }}
+                      hitSlop={{ top: 14, bottom: 14 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Go to step ${i + 1}`}
+                      accessibilityState={{ selected: i === step }}
+                      className={`h-1.5 flex-1 rounded-full ${i === step ? 'bg-[#3ddc68]' : 'bg-white/20'}`}
+                    />
+                  ) : (
+                    <View key={name} className={`h-1 flex-1 rounded-full ${i <= step ? 'bg-[#3ddc68]' : 'bg-white/15'}`} />
+                  )
+                )}
               </View>
             </View>
           ) : (
@@ -1438,7 +1490,7 @@ export function ProfileForm({
               <ActivityIndicator color="#ffffff" />
             ) : (
               <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
-                {mode === 'setup' ? (lastStep ? 'Save profile' : 'Continue') : 'Save changes'}
+                {mode === 'setup' ? (lastStep ? (editing ? 'Save changes' : 'Save profile') : 'Continue') : 'Save changes'}
               </Text>
             )}
           </Pressable>

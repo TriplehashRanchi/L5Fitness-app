@@ -1,17 +1,15 @@
 import { DisplayText } from '@/components/display-text';
 import { BmiScale, WeightRing, WeightTrend } from '@/components/profile/weight-visuals';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -35,6 +33,7 @@ import {
 } from '@/lib/body';
 import { getZonedParts, toDayKey } from '@/lib/datetime';
 import { messageFrom } from '@/lib/http';
+import type { BodyProfile, WeightEntry } from '@/lib/wellness-api';
 import { useAuth } from '@/providers/auth-provider';
 import { useProfile } from '@/providers/profile-provider';
 
@@ -45,33 +44,30 @@ const HAIRLINE = 'rgba(255,255,255,0.07)';
 const WEB_TOP_BAR = 72;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
-/** A card with a coloured icon, a title and a short status on the right (same look as Today's plan). */
+/** A section of the page: an icon, a title and a short status on the right, then its content. */
 function Card({
   icon,
-  color,
   title,
   status,
   statusColor,
   children,
 }: {
   icon: SymbolViewProps['name'];
-  color: string;
   title: string;
   status?: string | null;
   statusColor?: string;
   children: ReactNode;
 }) {
+  // No box around a section: a small heading, the content on the page itself, and a thin line between sections.
   return (
-    <View className="mx-5 mb-4 rounded-3xl border border-white/5 bg-card" style={{ padding: 16 }}>
-      <View className="flex-row items-center" style={{ gap: 12, marginBottom: 12 }}>
-        <View className="items-center justify-center" style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: `${color}26` }}>
-          <SymbolView name={icon} tintColor={color} size={18} />
-        </View>
-        <Text {...COMPACT_TEXT} accessibilityRole="header" className="flex-1 font-bold text-white" style={{ fontSize: 17 }}>
+    <View className="px-5" style={{ paddingTop: 22, paddingBottom: 24, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+      <View className="flex-row items-center" style={{ gap: 10, marginBottom: 14 }}>
+        <SymbolView name={icon} tintColor={MUTED} size={16} />
+        <Text {...COMPACT_TEXT} accessibilityRole="header" className="flex-1 font-bold uppercase text-muted" style={{ fontSize: 12, letterSpacing: 1.4 }}>
           {title}
         </Text>
         {status ? (
-          <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 13, color: statusColor ?? MUTED }}>
+          <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 13, color: statusColor ?? '#ffffff' }}>
             {status}
           </Text>
         ) : null}
@@ -95,23 +91,101 @@ function Figure({ label, value, divider }: { label: string; value: string; divid
   );
 }
 
-/** A small fact with its icon, two to a row. */
-function Tile({ icon, label, value, tone }: { icon: SymbolViewProps['name']; label: string; value: string; tone?: string }) {
+/** One fact about the member as a row: icon, what it is, and the value at the right. */
+function Row({ icon, label, value, tone, first }: { icon: SymbolViewProps['name']; label: string; value: string; tone?: string; first?: boolean }) {
   return (
-    <View style={{ width: '50%', padding: 5 }}>
-      <View accessible accessibilityLabel={`${label}: ${value}`} className="flex-row items-center rounded-2xl bg-card-2" style={{ gap: 10, padding: 12, minHeight: 62 }}>
-        <SymbolView name={icon} tintColor={MUTED} size={18} />
-        <View className="flex-1">
-          <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 15, color: tone ?? '#ffffff' }} numberOfLines={1}>
-            {value}
-          </Text>
-          <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 1 }} numberOfLines={1}>
-            {label}
-          </Text>
-        </View>
+    <View
+      accessible
+      accessibilityLabel={`${label}: ${value}`}
+      className="flex-row items-center"
+      style={{ gap: 12, minHeight: 50, borderTopWidth: first ? 0 : 1, borderTopColor: HAIRLINE }}>
+      <SymbolView name={icon} tintColor={MUTED} size={17} />
+      <Text {...COMPACT_TEXT} className="flex-1 text-muted" style={{ fontSize: 15 }} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 15, color: tone ?? '#ffffff' }} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+/** One thing worked out from the member's numbers: a short title and a sentence in plain words. */
+function Insight({ icon, title, text, first }: { icon: SymbolViewProps['name']; title: string; text: string; first?: boolean }) {
+  return (
+    <View accessible accessibilityLabel={`${title}. ${text}`} className="flex-row" style={{ gap: 12, paddingVertical: 12, borderTopWidth: first ? 0 : 1, borderTopColor: HAIRLINE }}>
+      <SymbolView name={icon} tintColor={BRAND} size={18} style={{ marginTop: 2 }} />
+      <View className="flex-1">
+        <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
+          {title}
+        </Text>
+        <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 13, lineHeight: 19, marginTop: 2 }}>
+          {text}
+        </Text>
       </View>
     </View>
   );
+}
+
+const ACTIVITY_FACTOR = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 } as const;
+
+/**
+ * What the member's own numbers say, in three plain sentences:
+ * the healthy weight range for their height (BMI 18.5 to 24.9), roughly how much energy they use in a day
+ * (the Mifflin-St Jeor estimate times their activity level), and how fast their weight is moving.
+ */
+function insightsFor(profile: BodyProfile, history: WeightEntry[], locale: string) {
+  const m = profile.heightCm / 100;
+  const low = 18.5 * m * m;
+  const high = 24.9 * m * m;
+  const inRange = profile.weightKg >= low && profile.weightKg <= high;
+  const range = {
+    title: `Healthy range: ${fmtKg(low)} to ${fmtKg(high)}`,
+    text: inRange
+      ? 'Your weight is inside the healthy range for your height.'
+      : profile.weightKg > high
+        ? `You are ${fmtKg(profile.weightKg - high)} above the top of the healthy range for your height.`
+        : `You are ${fmtKg(low - profile.weightKg)} below the bottom of the healthy range for your height.`,
+  };
+
+  const base = 10 * profile.weightKg + 6.25 * profile.heightCm - 5 * profile.age + (profile.sex === 'male' ? 5 : profile.sex === 'female' ? -161 : -78);
+  const daily = Math.round((base * ACTIVITY_FACTOR[profile.activityLevel]) / 10) * 10;
+  const energy = {
+    title: `About ${daily.toLocaleString(locale)} kcal a day`,
+    text:
+      profile.goal === 'lose'
+        ? 'That is roughly what your body uses in a day. Eating a little under it is what brings weight down.'
+        : profile.goal === 'gain'
+          ? 'That is roughly what your body uses in a day. Eating a little over it is what builds weight.'
+          : 'That is roughly what your body uses in a day. Eating around it keeps your weight steady.',
+  };
+
+  // Pace: from the oldest to the newest of the recent weigh-ins (newest first in `history`).
+  const recent = history.slice(0, 12);
+  const newest = recent[0];
+  const oldest = recent[recent.length - 1];
+  const days = newest && oldest ? (Date.parse(newest.day) - Date.parse(oldest.day)) / 86_400_000 : 0;
+  let pace: { title: string; text: string };
+  if (profile.goal === 'maintain') {
+    const off = Math.abs(profile.weightKg - profile.targetWeightKg);
+    pace = off <= 2 ? { title: 'Holding steady', text: `You are within ${fmtKg(off)} of your target.` } : { title: `${fmtKg(off)} from your target`, text: 'Small daily habits will bring you back to it.' };
+  } else if (!newest || !oldest || days < 7) {
+    pace = { title: 'Your pace will show here', text: 'Log your weight a few times over a week and you will see how fast you are moving.' };
+  } else {
+    const perWeek = ((newest.weightKg - oldest.weightKg) / days) * 7;
+    const toward = profile.goal === 'lose' ? perWeek < -0.05 : perWeek > 0.05;
+    const left = Math.abs(profile.targetWeightKg - profile.weightKg);
+    const reached = profile.goal === 'lose' ? profile.weightKg <= profile.targetWeightKg : profile.weightKg >= profile.targetWeightKg;
+    if (reached) pace = { title: 'Target reached', text: 'You are at your target weight. You can set a new one in Edit profile.' };
+    else if (toward) {
+      const weeks = Math.max(1, Math.round(left / Math.abs(perWeek)));
+      pace = {
+        title: `About ${weeks} ${weeks === 1 ? 'week' : 'weeks'} to your target`,
+        text: `You are ${profile.goal === 'lose' ? 'losing' : 'gaining'} about ${fmtKg(Math.abs(perWeek))} a week. At this pace you get there in about ${weeks} ${weeks === 1 ? 'week' : 'weeks'}.`,
+      };
+    } else pace = { title: 'Not moving toward the target yet', text: `Your weight has ${Math.abs(perWeek) < 0.05 ? 'stayed about the same' : profile.goal === 'lose' ? 'gone up a little' : 'gone down a little'} over your recent weigh-ins.` };
+  }
+  return { range, energy, pace };
 }
 
 /** A line of free text the member wrote (allergies, medical notes). */
@@ -162,6 +236,7 @@ export default function ProfileScreen() {
   const progress = profile ? goalProgress(profile.goal, profile.startWeightKg, profile.weightKg, profile.targetWeightKg) : 0;
   const bmiValue = profile ? bmi(profile.weightKg, profile.heightCm) : null;
   const band = bmiValue != null ? bmiCategory(bmiValue) : null;
+  const insights = useMemo(() => (profile ? insightsFor(profile, weightHistory, format.locale) : null), [profile, weightHistory, format.locale]);
 
   // Calculate total change since start
   const totalChangeKg = profile ? parseFloat((profile.weightKg - profile.startWeightKg).toFixed(1)) : 0;
@@ -214,42 +289,60 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
-        {/* Who this is: picture, name, role and goal. */}
-        <View className="mx-5 mb-4 overflow-hidden rounded-3xl border border-white/5" style={{ padding: 18 }}>
-          <LinearGradient colors={['#153a23', '#0b1a11']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
-          <View className="flex-row items-center" style={{ gap: 16 }}>
-            <View style={{ padding: 3, borderRadius: 44, borderWidth: 2, borderColor: BRAND }}>
-              <Avatar name={user?.name ?? 'Athlete'} image={user?.image} size={76} />
+        {/* Who this is: picture, name, role and goal, then the numbers that matter at a glance. */}
+        <View>
+          <View className="items-center" style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 22 }}>
+            <View style={{ padding: 3, borderRadius: 52, borderWidth: 2, borderColor: BRAND }}>
+              <Avatar name={user?.name ?? 'Athlete'} image={user?.image} size={92} />
             </View>
-            <View className="flex-1">
-              <DisplayText {...COMPACT_TEXT} className="text-white" style={{ fontSize: 24, lineHeight: 30 }} numberOfLines={1}>
-                {user?.name ?? 'Athlete'}
-              </DisplayText>
-              <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 13, marginTop: 2 }} numberOfLines={1}>
-                {user?.email}
-              </Text>
-              <View className="flex-row flex-wrap" style={{ gap: 8, marginTop: 10 }}>
-                <View className="justify-center rounded-full bg-brand" style={{ height: 26, paddingHorizontal: 12 }}>
-                  <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 12 }}>
-                    {roleLabel}
+            <DisplayText {...COMPACT_TEXT} className="text-center text-white" style={{ fontSize: 26, lineHeight: 32, marginTop: 12 }} numberOfLines={1} adjustsFontSizeToFit>
+              {user?.name ?? 'Athlete'}
+            </DisplayText>
+            <Text {...COMPACT_TEXT} className="text-center text-muted" style={{ fontSize: 13, marginTop: 2 }} numberOfLines={1}>
+              {user?.email}
+            </Text>
+            <View className="flex-row flex-wrap justify-center" style={{ gap: 8, marginTop: 12 }}>
+              <View className="justify-center rounded-full bg-brand" style={{ height: 26, paddingHorizontal: 12 }}>
+                <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 12 }}>
+                  {roleLabel}
+                </Text>
+              </View>
+              {profile ? (
+                <View className="justify-center rounded-full" style={{ height: 26, paddingHorizontal: 12, backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                  <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 12 }}>
+                    {GOAL_LABEL[profile.goal]}
                   </Text>
                 </View>
-                {profile ? (
-                  <View className="justify-center rounded-full" style={{ height: 26, paddingHorizontal: 12, backgroundColor: 'rgba(255,255,255,0.1)' }}>
-                    <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 12 }}>
-                      {GOAL_LABEL[profile.goal]}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
+              ) : null}
             </View>
+            {profile ? (
+              <Pressable
+                onPress={() => router.push('/edit-profile')}
+                accessibilityRole="button"
+                accessibilityLabel="Edit your profile"
+                className="flex-row items-center justify-center rounded-full border border-white/15 active:opacity-70"
+                style={{ gap: 8, minHeight: 44, paddingHorizontal: 22, marginTop: 16, backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                <SymbolView name={{ ios: 'pencil', android: 'edit', web: 'edit' }} tintColor="white" size={13} />
+                <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 14 }}>
+                  Edit profile
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
+          {profile ? (
+            <View className="flex-row" style={{ paddingVertical: 18, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
+              <Figure label="Weight" value={fmtKg(profile.weightKg)} />
+              <Figure label="Height" value={`${parseFloat(profile.heightCm.toFixed(1))} cm`} divider />
+              <Figure label="BMI" value={bmiValue != null ? String(bmiValue) : '–'} divider />
+              <Figure label="Age" value={`${profile.age}`} divider />
+            </View>
+          ) : null}
         </View>
 
         {profile ? (
           <>
             {/* Weight goal: the ring fills as the target gets closer. */}
-            <Card icon={{ ios: 'scalemass.fill', android: 'monitor_weight', web: 'monitor_weight' }} color={BRAND} title="Weight goal" status={`${Math.round(progress * 100)}%`}>
+            <Card icon={{ ios: 'scalemass', android: 'monitor_weight', web: 'monitor_weight' }} title="Weight goal" status={`${Math.round(progress * 100)}%`}>
               <View className="items-center" style={{ marginTop: 4 }}>
                 <WeightRing weightKg={profile.weightKg} progress={progress} />
                 <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 15, marginTop: 12 }}>
@@ -274,16 +367,26 @@ export default function ProfileScreen() {
               </Pressable>
             </Card>
 
+            {insights ? (
+              <Card icon={{ ios: 'lightbulb', android: 'lightbulb', web: 'lightbulb' }} title="For you">
+                <Insight first icon={{ ios: 'flag.checkered', android: 'flag', web: 'flag' }} title={insights.pace.title} text={insights.pace.text} />
+                <Insight icon={{ ios: 'heart', android: 'favorite', web: 'favorite' }} title={insights.range.title} text={insights.range.text} />
+                <Insight icon={{ ios: 'flame', android: 'local_fire_department', web: 'local_fire_department' }} title={insights.energy.title} text={insights.energy.text} />
+                <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 11, lineHeight: 16, marginTop: 4 }}>
+                  Estimates from your height, weight, age and activity. A guide, not medical advice.
+                </Text>
+              </Card>
+            ) : null}
+
             <Card
               icon={{ ios: 'chart.line.uptrend.xyaxis', android: 'show_chart', web: 'show_chart' }}
-              color="#38bdf8"
               title="Trend"
               status={weightHistory.length > 1 ? `${Math.min(12, weightHistory.length)} weigh-ins` : null}>
               <WeightTrend history={weightHistory} targetKg={profile.targetWeightKg} locale={format.locale} />
             </Card>
 
             {bmiValue != null && band ? (
-              <Card icon={{ ios: 'heart.fill', android: 'favorite', web: 'favorite' }} color="#fb923c" title="BMI" status={band.label} statusColor={band.tone === 'ok' ? BRAND : '#fb923c'}>
+              <Card icon={{ ios: 'heart', android: 'favorite', web: 'favorite' }} title="BMI" status={band.label} statusColor={band.tone === 'ok' ? BRAND : '#fb923c'}>
                 <DisplayText {...COMPACT_TEXT} className="text-white" style={{ fontSize: 36, lineHeight: 42, marginBottom: 8 }}>
                   {bmiValue}
                 </DisplayText>
@@ -291,37 +394,24 @@ export default function ProfileScreen() {
               </Card>
             ) : null}
 
-            <Card icon={{ ios: 'person.fill', android: 'person', web: 'person' }} color="#fbbf24" title="About you">
-              <View className="flex-row flex-wrap" style={{ marginHorizontal: -5 }}>
-                <Tile icon={{ ios: 'birthday.cake.fill', android: 'cake', web: 'cake' }} label="Age" value={`${profile.age} yrs`} />
-                <Tile icon={{ ios: 'ruler.fill', android: 'straighten', web: 'straighten' }} label="Height" value={`${parseFloat(profile.heightCm.toFixed(1))} cm`} />
-                <Tile icon={{ ios: 'person.fill', android: 'wc', web: 'wc' }} label="Sex" value={SEX_LABEL[profile.sex]} />
-                <Tile icon={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} label="Diet" value={DIET_LABEL[profile.dietType]} />
-                <Tile icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }} label="Activity" value={ACTIVITY_LABEL[profile.activityLevel].title} />
-                <Tile
-                  icon={{ ios: 'person.2.fill', android: 'group', web: 'group' }}
-                  label="Sharing"
-                  value={profile.shareWithDietitian ? 'On' : 'Off'}
-                  tone={profile.shareWithDietitian ? BRAND : undefined}
-                />
-              </View>
+            <Card icon={{ ios: 'person', android: 'person', web: 'person' }} title="About you">
+              <Row first icon={{ ios: 'birthday.cake', android: 'cake', web: 'cake' }} label="Age" value={`${profile.age} yrs`} />
+              <Row icon={{ ios: 'ruler', android: 'straighten', web: 'straighten' }} label="Height" value={`${parseFloat(profile.heightCm.toFixed(1))} cm`} />
+              <Row icon={{ ios: 'person', android: 'wc', web: 'wc' }} label="Sex" value={SEX_LABEL[profile.sex]} />
+              <Row icon={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} label="Diet" value={DIET_LABEL[profile.dietType]} />
+              <Row icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }} label="Activity" value={ACTIVITY_LABEL[profile.activityLevel].title} />
+              <Row
+                icon={{ ios: 'person.2', android: 'group', web: 'group' }}
+                label="Sharing with dietitian"
+                value={profile.shareWithDietitian ? 'On' : 'Off'}
+                tone={profile.shareWithDietitian ? BRAND : undefined}
+              />
               <Note label="Allergies" value={profile.allergies} />
               <Note label="Medical notes" value={profile.medicalNotes} />
-              <Pressable
-                onPress={() => router.push('/edit-profile')}
-                accessibilityRole="button"
-                accessibilityLabel="Edit your profile"
-                className="flex-row items-center justify-center rounded-full bg-card-2 active:opacity-70"
-                style={{ gap: 8, minHeight: 48, marginTop: 14 }}>
-                <SymbolView name={{ ios: 'pencil', android: 'edit', web: 'edit' }} tintColor="white" size={14} />
-                <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
-                  Edit profile
-                </Text>
-              </Pressable>
             </Card>
           </>
         ) : (
-          <Card icon={{ ios: 'figure.strengthtraining.traditional', android: 'fitness_center', web: 'fitness_center' }} color={BRAND} title="Your fitness profile">
+          <Card icon={{ ios: 'figure.strengthtraining.traditional', android: 'fitness_center', web: 'fitness_center' }} title="Your fitness profile">
             <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
               A few quick questions, so your plan and progress fit you.
             </Text>

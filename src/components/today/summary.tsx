@@ -1,4 +1,5 @@
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import type { ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
@@ -15,9 +16,8 @@ const MEALS = '#fb923c';
 const TRACK = 'rgba(255,255,255,0.08)';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
-function Ring({ percent }: { percent: number }) {
-  const size = 104;
-  const stroke = 11;
+function Ring({ percent, size = 104 }: { percent: number; size?: number }) {
+  const stroke = size >= 100 ? 11 : 8;
   const r = (size - stroke) / 2;
   const len = 2 * Math.PI * r;
   const shown = Math.min(1, Math.max(0, percent / 100));
@@ -39,9 +39,9 @@ function Ring({ percent }: { percent: number }) {
           />
         ) : null}
       </Svg>
-      <DisplayText {...COMPACT_TEXT} style={{ fontSize: 26, lineHeight: 30 }} className="text-white">
+      <DisplayText {...COMPACT_TEXT} style={{ fontSize: size >= 100 ? 26 : 19, lineHeight: size >= 100 ? 30 : 23 }} className="text-white">
         {percent}
-        <Text style={{ fontSize: 14 }} className="text-muted">
+        <Text style={{ fontSize: size >= 100 ? 14 : 11 }} className="text-muted">
           %
         </Text>
       </DisplayText>
@@ -52,7 +52,7 @@ function Ring({ percent }: { percent: number }) {
 function Stat({ icon, color, value, label, ratio }: { icon: SymbolViewProps['name']; color: string; value: string; label: string; ratio: number }) {
   return (
     <View className="flex-1 items-center" accessible accessibilityLabel={`${label}: ${value}`}>
-      <SymbolView name={icon} tintColor={color} size={18} />
+      <SymbolView name={icon} tintColor="#e8efe9" size={18} />
       <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 14, marginTop: 6 }} numberOfLines={1}>
         {value}
       </Text>
@@ -69,7 +69,24 @@ function Stat({ icon, color, value, label, ratio }: { icon: SymbolViewProps['nam
 const short = (n: number, locale: string) => (n >= 10000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k` : n.toLocaleString(locale));
 
 /** The top card: how much of the day is done, as a ring, and one small meter each for workout, meals, water and steps. */
-export function DaySummary({ day, percent, locale }: { day: MyDay; percent: number; locale: string }) {
+export function DaySummary({
+  day,
+  percent,
+  locale,
+  slim,
+  title,
+  action,
+}: {
+  day: MyDay;
+  percent: number;
+  locale: string;
+  /** A shorter card: a smaller ring. */
+  slim?: boolean;
+  /** Which day this is ("Today", "Mon 17 Nov"), shown above the line about progress. */
+  title?: string;
+  /** Something to press at the right of the card, such as "Today". */
+  action?: ReactNode;
+}) {
   const counts = dayCounts(day);
   const complete = counts.total > 0 && counts.done >= counts.total;
   const part = (v: number, goal: number) => (goal > 0 ? v / goal : 0);
@@ -83,20 +100,26 @@ export function DaySummary({ day, percent, locale }: { day: MyDay; percent: numb
         accessibilityRole="progressbar"
         accessibilityLabel={`${counts.done} of ${counts.total} done, ${percent} percent`}
         accessibilityValue={{ min: 0, max: 100, now: percent }}>
-        <Ring percent={percent} />
+        <Ring percent={percent} size={slim ? 76 : 104} />
         <View className="flex-1">
-          <DisplayText {...COMPACT_TEXT} accessibilityLiveRegion="polite" style={{ fontSize: 24, lineHeight: 30 }} className={complete ? 'text-brand' : 'text-white'}>
+          {title ? (
+            <Text {...COMPACT_TEXT} numberOfLines={1} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1.2, marginBottom: 2 }}>
+              {title}
+            </Text>
+          ) : null}
+          <DisplayText {...COMPACT_TEXT} accessibilityLiveRegion="polite" numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: slim ? 22 : 24, lineHeight: slim ? 28 : 30 }} className={complete ? 'text-brand' : 'text-white'}>
             {progressLine(percent)}
           </DisplayText>
           <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, marginTop: 4 }}>
             <Text className="font-bold text-white">{counts.done}</Text> of {counts.total} tasks done
           </Text>
         </View>
+        {action}
       </View>
 
-      <View className="flex-row" style={{ marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' }}>
+      <View className="flex-row" style={{ marginTop: slim ? 14 : 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' }}>
         <Stat
-          icon={{ ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }}
+          icon={{ ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' }}
           color={BRAND}
           value={!day.training ? '–' : day.training.done ? 'Done' : 'To do'}
           label="Workout"
@@ -110,7 +133,7 @@ export function DaySummary({ day, percent, locale }: { day: MyDay; percent: numb
           ratio={part(day.diet.done, day.diet.total)}
         />
         <Stat
-          icon={{ ios: 'drop.fill', android: 'water_drop', web: 'water_drop' }}
+          icon={{ ios: 'drop', android: 'water_drop', web: 'water_drop' }}
           color={WATER}
           value={formatWater(day.water.totalMl)}
           label="Water"
