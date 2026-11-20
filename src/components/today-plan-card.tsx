@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { DietBlock } from '@/components/today-card/diet-block';
@@ -9,7 +9,10 @@ import { COMPACT_TEXT } from '@/components/today-card/ui';
 import { useTodayCard } from '@/components/today-card/use-today-card';
 import { WorkoutBlock } from '@/components/today-card/workout-block';
 import { toDayKey, type CalendarDay } from '@/lib/datetime';
+import { SHOW_WORKOUT } from '@/lib/features';
 import type { Home } from '@/lib/fitness-api';
+
+export { SHOW_WORKOUT };
 
 export { TodayCardSkeleton } from '@/components/today-card/skeleton';
 
@@ -28,7 +31,7 @@ function dateLabelFor(day: CalendarDay, locale: string) {
 }
 
 /**
- * Today's plan on Home: the workout and the diet, each with its quick action.
+ * Today's plan on Home: the workout (or the running workout, once started) and the diet, each with its quick action.
  * Water, steps, calories and meal photos live in the body section at the top of Home, so they are not repeated here.
  */
 export function TodayPlanCard({
@@ -37,6 +40,7 @@ export function TodayPlanCard({
   today,
   locale,
   workoutActive,
+  liveWorkout,
   onStartWorkout,
 }: {
   data: Home;
@@ -44,15 +48,18 @@ export function TodayPlanCard({
   today: CalendarDay;
   locale: string;
   workoutActive: boolean;
+  /** The running workout, shown in place of the workout block. */
+  liveWorkout?: ReactNode;
   onStartWorkout: () => void;
 }) {
   const todayKey = toDayKey(today);
   const card = useTodayCard(setData, todayKey);
   const progress = todayProgress(data, null);
   const dateLabel = dateLabelFor(today, locale);
+  const live = SHOW_WORKOUT ? liveWorkout : null;
 
   return (
-    <View className="mx-5 mb-5 rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 }}>
+    <View className="mx-5 mb-5" style={{ paddingTop: 8, paddingBottom: 4 }}>
       <View className="flex-row items-baseline justify-between gap-3">
         <DisplayText {...COMPACT_TEXT} numberOfLines={1} className="text-[22px] leading-7 tracking-tight text-white">
           Today’s plan
@@ -62,22 +69,25 @@ export function TodayPlanCard({
         </Text>
       </View>
       <View className="mt-3">
-        <WorkoutBlock
-          plan={data.plan}
-          done={progress.workoutDone}
-          active={workoutActive}
-          dateLabel={dateLabel}
-          coaching={data.coaching}
-          onStart={onStartWorkout}
-          onOpen={() => router.push('/today-plan' as never)}
-        />
+        {live ?? (!SHOW_WORKOUT ? null : (
+          <WorkoutBlock
+            plan={data.plan}
+            done={progress.workoutDone}
+            active={workoutActive}
+            dateLabel={dateLabel}
+            coaching={data.coaching}
+            onStart={onStartWorkout}
+            onOpen={() => router.push('/today-plan' as never)}
+          />
+        ))}
         <DietBlock
+          first={!SHOW_WORKOUT}
           diet={data.diet}
           coaching={data.coaching}
           pending={card.pending}
           error={card.dietError}
           onToggle={card.toggleItem}
-          onOpen={() => router.navigate('/diet')}
+          onOpen={() => router.push('/today-plan' as never)}
         />
       </View>
       <Pressable

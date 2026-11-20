@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { blobPath } from '@/lib/blob-path';
+import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -28,6 +29,13 @@ const ICONS: Record<string, (color: string) => React.ReactNode> = {
       <Path d="M17 20.5 V3.5 C14.5 5 13.5 8 13.5 11 H17" stroke={c} />
     </>
   ),
+  // A member's Diet tab is their chat with the dietitian.
+  chat: (c) => (
+    <>
+      <Path d="M5 5.5 H19 A1.5 1.5 0 0 1 20.5 7 V15 A1.5 1.5 0 0 1 19 16.5 H11 L7 20 V16.5 H5 A1.5 1.5 0 0 1 3.5 15 V7 A1.5 1.5 0 0 1 5 5.5 Z" stroke={c} />
+      <Path d="M8 9.5 H16 M8 12.5 H13" stroke={c} />
+    </>
+  ),
   profile: (c) => (
     <>
       <Circle cx={12} cy={8} r={3.5} stroke={c} />
@@ -45,6 +53,8 @@ const BUTTON = 60;
 
 /** Floating white blob pill: four grey bead circles with thin outline icons. The active one is brand green. */
 export function FloatingTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarProps) {
+  const { role } = useProfile();
+  const chatTab = role === 'member';
   const routes = state.routes.filter((r) => LABELS[r.name]);
   const n = routes.length;
   const width = R * 2 + (n - 1) * STEP;
@@ -68,7 +78,7 @@ export function FloatingTabBar({ state, emitter, navigateToTab, insets }: Bottom
               onPress={onPress}
               onLongPress={() => emitter.emit({ type: 'tabLongPress', target: route.key })}
               accessibilityRole="tab"
-              accessibilityLabel={LABELS[route.name]}
+              accessibilityLabel={route.name === 'diet' ? (chatTab ? 'Chat with your dietitian' : 'Clients') : LABELS[route.name]}
               accessibilityState={{ selected: focused }}
               style={({ pressed }) => ({
                 position: 'absolute',
@@ -90,7 +100,7 @@ export function FloatingTabBar({ state, emitter, navigateToTab, insets }: Bottom
                 strokeWidth={STROKE}
                 strokeLinecap="round"
                 strokeLinejoin="round">
-                {ICONS[route.name](focused ? INK : ICON)}
+                {ICONS[route.name === 'diet' && chatTab ? 'chat' : route.name](focused ? INK : ICON)}
               </Svg>
             </Pressable>
           );

@@ -1,8 +1,11 @@
 import { Tabs, TabList, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { Pressable, Text, View } from 'react-native';
 
+import { useProfile } from '@/providers/profile-provider';
+
 /** Web: a floating top bar instead of the native bottom tab bar. */
 export default function AppTabs() {
+  const { role } = useProfile();
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -22,7 +25,7 @@ export default function AppTabs() {
               <TabButton>Activity</TabButton>
             </TabTrigger>
             <TabTrigger name="diet" href="/diet" asChild>
-              <TabButton>Diet</TabButton>
+              <TabButton>{role === 'member' ? 'Chat' : 'Clients'}</TabButton>
             </TabTrigger>
             <TabTrigger name="profile" href="/profile" asChild>
               <TabButton>Profile</TabButton>

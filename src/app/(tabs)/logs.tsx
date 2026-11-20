@@ -21,6 +21,7 @@ import { dayCounts } from '@/lib/day-plan';
 import { messageFrom } from '@/lib/http';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
 import { withDeviceSteps } from '@/lib/today-tasks';
+import { SHOW_WORKOUT } from '@/lib/features';
 import { getActivity, type ActivityRange } from '@/lib/fitness-api';
 import { getHistory, type HistoryDay } from '@/lib/wellness-api';
 
@@ -130,6 +131,7 @@ export default function LogsScreen() {
   }, [todayKey]);
   /** Days with a logged workout, for the dots under the week strip: the month's, plus older ones from the logbook. */
   const logged = useMemo(() => {
+    if (!SHOW_WORKOUT) return new Set<string>();
     const set = new Set((days ?? []).map((d) => d.day));
     for (const d of month?.days ?? []) if (d.workouts > 0) set.add(d.day);
     return set;
@@ -234,6 +236,8 @@ export default function LogsScreen() {
             percent={percent}
             locale={format.locale}
             slim
+            hideWorkout={!SHOW_WORKOUT}
+            plain
             title={dayLabel(selectedKey, todayKey, format.locale)}
             action={
               isToday ? null : (
@@ -259,6 +263,8 @@ export default function LogsScreen() {
             pending={day.pending}
             onToggle={day.toggleItem}
             canTick={selectedKey <= todayKey}
+            hideWorkout={!SHOW_WORKOUT}
+            plain
             // Only today can be acted on from here; every other day is just shown.
             onStart={isToday ? () => router.navigate({ pathname: '/', params: { start: '1' } } as never) : undefined}
             onDrink={isToday ? day.drink : undefined}
@@ -278,7 +284,7 @@ export default function LogsScreen() {
           {month ? (
             <MonthSection data={month} today={today} locale={format.locale} onOpenDay={openDay} />
           ) : monthError ? (
-            <View accessibilityRole="alert" className="mx-5 rounded-3xl border border-white/5 bg-card" style={{ padding: 18 }}>
+            <View accessibilityRole="alert" className="mx-5">
               <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
                 The last 30 days could not be loaded
               </Text>
@@ -289,14 +295,18 @@ export default function LogsScreen() {
               </Pressable>
             </View>
           ) : null}
-          <SectionTitle>All time</SectionTitle>
-          {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
-          <SectionTitle>Workout log</SectionTitle>
-          <HistoryFilterBar value={filter} onChange={setFilter} />
+          {SHOW_WORKOUT ? (
+            <>
+              <SectionTitle>All time</SectionTitle>
+              {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
+              <SectionTitle>Workout log</SectionTitle>
+              <HistoryFilterBar value={filter} onChange={setFilter} />
+            </>
+          ) : null}
         </>
       )}
 
-      {error && mode === 'history' ? (
+      {error && mode === 'history' && SHOW_WORKOUT ? (
         <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
           <Text className="text-sm font-semibold text-white">{error}</Text>
           <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text>
@@ -310,7 +320,7 @@ export default function LogsScreen() {
       <StatusBar style="light" />
       <FlatList
         ref={listRef}
-        data={mode === 'history' ? filteredDays : []}
+        data={mode === 'history' && SHOW_WORKOUT ? filteredDays : []}
         keyExtractor={(d) => d.day}
         ListHeaderComponent={header}
         contentContainerStyle={{
@@ -321,7 +331,7 @@ export default function LogsScreen() {
           paddingBottom: insets.bottom + (isWeb ? 0 : BottomTabInset) + 24,
         }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={BRAND} colors={[BRAND]} />}
-        onEndReached={mode === 'history' ? loadMore : undefined}
+        onEndReached={mode === 'history' && SHOW_WORKOUT ? loadMore : undefined}
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
@@ -336,14 +346,14 @@ export default function LogsScreen() {
           />
         )}
         ListEmptyComponent={
-          mode === 'day' ? undefined : days === null ? (
+          mode === 'day' || !SHOW_WORKOUT ? undefined : days === null ? (
             error ? undefined : (
               <View className="items-center py-14">
                 <ActivityIndicator color={BRAND} size="large" />
               </View>
             )
           ) : (
-            <View className="mx-5 items-center rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
+            <View className="mx-5 items-center" style={{ paddingHorizontal: 24, paddingVertical: 32 }}>
               <View className="items-center justify-center" style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(61,220,104,0.12)' }}>
                 <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} tintColor={BRAND} size={28} />
               </View>

@@ -20,9 +20,9 @@ function Lines({ text }: { text: string }) {
       {lines.map((line, i) => {
         const hot = /\d+\s*(x|×|sets?|reps?|rounds?|min|sec|s\b)/i.test(line);
         return (
-          <View key={i} className={`flex-row items-start gap-3 rounded-xl px-3 py-2.5 ${hot ? 'bg-brand/10' : 'bg-card-2'}`}>
+          <View key={i} className="flex-row items-start gap-3 py-1">
             <View style={{ width: 5, height: 5, borderRadius: 3, marginTop: 8, backgroundColor: hot ? BRAND : '#8fa396' }} />
-            <Text selectable {...COMPACT_TEXT} className={`flex-1 text-sm leading-6 ${hot ? 'font-semibold text-white' : 'text-white'}`}>
+            <Text selectable {...COMPACT_TEXT} className={`flex-1 text-sm leading-6 ${hot ? 'font-semibold text-brand' : 'text-white'}`}>
               {line.replace(/^[-•*]\s*/, '')}
             </Text>
           </View>

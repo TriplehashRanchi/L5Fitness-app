@@ -38,7 +38,7 @@ const PAGE = 30;
 
 /** Where a message can take the member, and the words on its button. Inbox and Home messages stay here. */
 const GO: Partial<Record<Screen, { href: Href; label: string }>> = {
-  diet: { href: "/diet" as Href, label: "Open diet" },
+  diet: { href: "/diet" as Href, label: "Open chat" },
   logs: { href: "/logs" as Href, label: "Open logs" },
 };
 

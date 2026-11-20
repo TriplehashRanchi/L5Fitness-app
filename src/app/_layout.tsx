@@ -82,6 +82,7 @@ function RootNavigator() {
             <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="complete-profile" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           </Stack.Protected>
         </Stack>

@@ -39,7 +39,8 @@ export function Avatar({ name, image, size = 48 }: { name: string; image?: strin
           accessibilityLabel={`${name}'s profile picture`}
         />
       ) : (
-        <Text maxFontSizeMultiplier={1.3} className="text-lg font-black text-ink">
+        // Sized to the circle, so the letters also fit a small picture (next to a chat message).
+        <Text maxFontSizeMultiplier={1.3} className="font-black text-ink" style={{ fontSize: Math.max(11, Math.min(18, size * 0.38)) }}>
           {initialsOf(name)}
         </Text>
       )}

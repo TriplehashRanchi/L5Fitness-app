@@ -11,6 +11,8 @@ import { Avatar } from '@/components/avatar';
 import { BottomTabInset } from '@/constants/theme';
 import { fmtKg, GOAL_LABEL } from '@/lib/body';
 import { messageFrom } from '@/lib/http';
+import { getUnreadChats } from '@/lib/chat-api';
+import { useNewChatMessages } from '@/lib/realtime';
 import { listClients, type ClientSummary } from '@/lib/wellness-api';
 
 const BRAND = '#3ddc68';
@@ -24,6 +26,8 @@ export function ClientsList() {
   const [query, setQuery] = useState('');
   const [clients, setClients] = useState<ClientSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Unread chat messages from each client. */
+  const [unread, setUnread] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
   const latest = useRef(0);
 
@@ -34,6 +38,10 @@ export function ClientsList() {
       if (id !== latest.current) return;
       setClients(res.clients);
       setError(null);
+      // The badges are a nicety: the list still shows if they cannot be loaded.
+      getUnreadChats()
+        .then((u) => setUnread(Object.fromEntries(u.clients.map((c) => [c.memberId, c.unread]))))
+        .catch(() => {});
     } catch (e) {
       if (id === latest.current) setError(messageFrom(e));
     }
@@ -51,6 +59,13 @@ export function ClientsList() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load])
   );
+
+  // A client wrote just now: bring the unread badges up to date.
+  useNewChatMessages(() => {
+    getUnreadChats()
+      .then((u) => setUnread(Object.fromEntries(u.clients.map((c) => [c.memberId, c.unread]))))
+      .catch(() => {});
+  });
 
   const isWeb = Platform.OS === 'web';
 
@@ -136,6 +151,17 @@ export function ClientsList() {
                     {GOAL_LABEL[c.goal]} · {fmtKg(c.weightKg)} → {fmtKg(c.targetWeightKg)}
                   </Text>
                 </View>
+                {unread[c.id] ? (
+                  <View
+                    accessible
+                    accessibilityLabel={`${unread[c.id]} unread ${unread[c.id] === 1 ? 'message' : 'messages'}`}
+                    className="items-center justify-center rounded-full bg-brand"
+                    style={{ minWidth: 24, height: 24, paddingHorizontal: 7 }}>
+                    <Text {...COMPACT_TEXT} className="text-xs font-black text-ink">
+                      {unread[c.id] > 99 ? '99+' : unread[c.id]}
+                    </Text>
+                  </View>
+                ) : null}
                 <View className="items-end">
                   <Text {...COMPACT_TEXT} className={`text-base font-bold ${percent == null ? 'text-muted' : percent >= 70 ? 'text-brand' : 'text-white'}`}>
                     {percent == null ? '–' : `${percent}%`}

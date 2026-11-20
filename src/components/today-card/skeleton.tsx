@@ -20,7 +20,7 @@ export function TodayCardSkeleton() {
       accessible
       accessibilityLabel="Loading today's plan"
       accessibilityRole="progressbar"
-      className="mx-5 mb-5 rounded-3xl border border-white/5 bg-card"
+      className="mx-5 mb-5"
       style={{ padding: 18 }}>
       <Animated.View style={pulse}>
         <View style={{ height: 120 }} className="justify-center">

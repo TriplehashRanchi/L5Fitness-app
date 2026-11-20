@@ -1,9 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { DisplayText } from '@/components/display-text';
-import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   RefreshControl,
@@ -18,9 +15,11 @@ import { BodyHero } from '@/components/body-hero';
 import { HomeHeader } from '@/components/home-header';
 import { planCopy } from '@/lib/plan-copy';
 import { GoalsTile, StepsTile } from '@/components/home-summary-card';
+import { OfferCard } from '@/components/offer-card';
 import { PlanHeroCard } from '@/components/plan-hero-card';
 import { todayProgress } from '@/components/today-card/plan-progress';
-import { TodayCardSkeleton, TodayPlanCard } from '@/components/today-plan-card';
+import { ActiveWorkoutCard } from '@/components/active-workout/active-workout-card';
+import { SHOW_WORKOUT, TodayCardSkeleton, TodayPlanCard } from '@/components/today-plan-card';
 import { BottomTabInset } from '@/constants/theme';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { useHome } from '@/hooks/use-home';
@@ -47,16 +46,15 @@ import {
   type ActiveWorkout,
 } from '@/lib/storage';
 import { useAuth } from '@/providers/auth-provider';
+import { useProfile } from '@/providers/profile-provider';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
 
 const BRAND = '#3ddc68';
-const INK = '#050a07';
 
 /** On web the tab bar sits at the top of the page instead of the bottom. */
 const WEB_TOP_BAR = 72;
 
 /** Keeps compact labels from overflowing when the user has very large system text. */
-const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 /** If "Finish" is pressed much later (the member forgot), count at most this long. */
 const MAX_WORKOUT_MIN = 240;
@@ -65,6 +63,7 @@ const MAX_WORKOUT_MIN = 240;
 const minutesSince = (start: Date) => Math.round((Date.now() - start.getTime()) / 60_000);
 
 export default function HomeScreen() {
+  const { role } = useProfile();
   const insets = useSafeAreaInsets();
   const { now, format, firstWeekday } = useDeviceClock();
   const [weekOffset, setWeekOffset] = useState(0);
@@ -155,6 +154,11 @@ export default function HomeScreen() {
   // "Start workout" on the Today's plan screen comes back here with ?start=1: start once the plan is loaded.
   useEffect(() => {
     if (start !== '1') return;
+    // The workout section is off Home for now, so there is nowhere to show a running workout.
+    if (!SHOW_WORKOUT) {
+      router.setParams({ start: undefined });
+      return;
+    }
     if (!plan || !userId) return;
     router.setParams({ start: undefined });
     if (!active) queueMicrotask(() => void startWorkout());
@@ -300,102 +304,23 @@ export default function HomeScreen() {
         ) : null}
 
         <View style={{ height: 10 }} />
-        {/* Hero: Active Workout HUD OR Today's Workout Plan */}
-        {active ? (
-          /* Active Workout in-progress HUD */
-          <View className="mx-5 mb-5 overflow-hidden rounded-3xl border-2 border-brand/60 bg-card p-6 shadow-2xl">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-center gap-2 rounded-full bg-brand/20 px-3 py-1">
-                <View className="h-2 w-2 rounded-full bg-brand" />
-                <Text {...COMPACT_TEXT} className="text-xs font-black uppercase tracking-widest text-brand">
-                  WORKOUT IN PROGRESS
-                </Text>
-              </View>
-              <Text {...COMPACT_TEXT} className="text-xs text-muted">
-                Started {formatTime(activeStart ?? now, format)}
-              </Text>
-            </View>
-
-            <DisplayText className="mt-4 text-[28px] font-bold leading-9 tracking-tight text-white">
-              {active.title}
-            </DisplayText>
-
-            {active.instructions ? <Text selectable className="mt-4 text-sm leading-6 text-white">{active.instructions}</Text> : null}
-            {/* Live Ticking Timer + Live Calories Meter */}
-            <View className="mt-4 flex-row items-center gap-4 rounded-2xl bg-card-2 p-4">
-              <View className="flex-1">
-                <Text {...COMPACT_TEXT} className="text-[11px] font-bold uppercase tracking-wider text-muted">
-                  ELAPSED TIME
-                </Text>
-                <DisplayText {...COMPACT_TEXT} style={{ fontSize: 32, lineHeight: 36 }} className="mt-1 font-black text-brand">
-                  {activeTimeDisplay}
-                </DisplayText>
-              </View>
-              <View className="h-10 w-[1px] bg-white/10" />
-              <View className="flex-1">
-                <Text {...COMPACT_TEXT} className="text-[11px] font-bold uppercase tracking-wider text-muted">
-                  EST. BURN
-                </Text>
-                <View className="mt-1 flex-row items-baseline gap-1">
-                  <DisplayText {...COMPACT_TEXT} style={{ fontSize: 32, lineHeight: 36 }} className="font-black text-orange-400">
-                    {liveBurnKcal}
-                  </DisplayText>
-                  <Text {...COMPACT_TEXT} className="text-xs font-semibold text-muted">
-                    kcal
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Finish & Discard actions */}
-            <View className="mt-5 flex-row items-center gap-3">
-              <Pressable
-                onPress={finishWorkout}
-                disabled={busy === 'workout'}
-                accessibilityRole="button"
-                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-brand py-4 active:opacity-80">
-                {busy === 'workout' ? (
-                  <ActivityIndicator color={INK} size="small" />
-                ) : (
-                  <>
-                    <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} tintColor={INK} size={18} />
-                    <Text {...COMPACT_TEXT} className="text-base font-black text-ink">
-                      Finish Workout
-                    </Text>
-                  </>
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={discardWorkout}
-                disabled={busy === 'workout'}
-                hitSlop={8}
-                accessibilityRole="button"
-                className="rounded-2xl border border-white/10 bg-card-2 px-4 py-4 active:opacity-70">
-                <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted">
-                  Cancel
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : (
-          <PlanHeroCard
-            title={heroTitle}
-            subtitle={
-              plan
-                ? plan.title
-                : loading
-                  ? ' '
-                  : data?.coaching.status === 'not_shared'
-                    ? 'Turn on sharing to get plans'
-                    : data?.coaching.status === 'pending'
-                      ? 'Your plan is on the way'
-                      : 'No plan added yet'
-            }
-            notchX={weekOffset === 0 && todayIndex >= 0 ? (todayIndex + 0.5) / 7 : null}
-            onPress={() => router.push('/today-plan' as never)}
-          />
-        )}
+        {/* Hero: today's workout plan. A running workout shows further down, in Today's plan, where it was started. */}
+        <PlanHeroCard
+          title={heroTitle}
+          subtitle={
+            plan
+              ? plan.title
+              : loading
+                ? ' '
+                : data?.coaching.status === 'not_shared'
+                  ? 'Turn on sharing to get plans'
+                  : data?.coaching.status === 'pending'
+                    ? 'Your plan is on the way'
+                    : 'No plan added yet'
+          }
+          notchX={weekOffset === 0 && todayIndex >= 0 ? (todayIndex + 0.5) / 7 : null}
+          onPress={() => router.push('/today-plan' as never)}
+        />
 
         {/* Steps + goals tiles */}
         <View className="mx-5 mb-5 flex-row gap-3">
@@ -411,11 +336,28 @@ export default function HomeScreen() {
             today={today}
             locale={format.locale}
             workoutActive={!!active}
+            liveWorkout={
+              active ? (
+                <ActiveWorkoutCard
+                  title={active.title}
+                  instructions={active.instructions}
+                  startedLabel={formatTime(activeStart ?? now, format)}
+                  timeDisplay={activeTimeDisplay}
+                  kcal={liveBurnKcal}
+                  busy={busy === 'workout'}
+                  onFinish={finishWorkout}
+                  onCancel={discardWorkout}
+                />
+              ) : null
+            }
             onStartWorkout={startWorkout}
           />
         ) : loading ? (
           <TodayCardSkeleton />
         ) : null}
+
+        {/* The challenge offer closes the page. It is for members: it sends them to their dietitian. */}
+        {role === 'member' ? <OfferCard /> : null}
 
       </ScrollView>
 

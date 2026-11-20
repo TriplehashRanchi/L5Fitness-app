@@ -107,6 +107,9 @@ export function setTokenProvider(provider: (() => Promise<string | null>) | null
   tokenProvider = provider;
 }
 
+/** A fresh sign-in token, or null when nobody is signed in. For the live connection (lib/realtime). */
+export const getToken = async () => (await tokenProvider?.()) ?? null;
+
 /** Called by the auth provider: what to do when the server says the session is over. */
 export function setSessionEndedHandler(handler: (() => void) | null) {
   onSessionEnded = handler;

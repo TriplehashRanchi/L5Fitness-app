@@ -1,3 +1,4 @@
+import { SHOW_WORKOUT } from '@/lib/features';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -34,7 +35,7 @@ const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 const known = (days: ActivityDay[], f: (d: ActivityDay) => number | null) => days.map(f).filter((n): n is number => n != null);
 const mealsOf = (d: ActivityDay) => (d.dietPlanned > 0 ? d.dietDone : d.meals);
 
-const METRICS: Metric[] = [
+const ALL_METRICS: Metric[] = [
   {
     id: 'steps',
     label: 'Steps',
@@ -98,6 +99,9 @@ const METRICS: Metric[] = [
   },
 ];
 
+/** The charts on offer; workouts are left out while they are switched off. */
+const METRICS = SHOW_WORKOUT ? ALL_METRICS : ALL_METRICS.filter((m) => m.id !== 'workouts');
+
 const toCalendar = (key: string): CalendarDay => {
   const [year, month, day] = key.split('-').map(Number);
   return { year, month, day };
@@ -131,7 +135,7 @@ export function MonthCard({
   const shownValue = shownDay ? metric.value(shownDay) : null;
 
   return (
-    <View className="mx-5 rounded-3xl border border-white/5 bg-card" style={{ padding: 18 }}>
+    <View className="mx-5" style={{ marginTop: 12, paddingTop: 20, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' }}>
       <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1.2 }}>
         Last 30 days
       </Text>
@@ -262,15 +266,15 @@ const isActive = (d: ActivityDay, stepGoal: number) => d.workouts > 0 || (d.step
 
 function Tile({ icon, label, value, unit }: { icon: SymbolViewProps['name']; label: string; value: string; unit: string }) {
   return (
-    <View accessible accessibilityLabel={`${label}: ${value} ${unit}`} className="flex-1 rounded-3xl border border-white/5 bg-card" style={{ padding: 16 }}>
-      <View className="flex-row items-center justify-between">
+    <View accessible accessibilityLabel={`${label}: ${value} ${unit}`} className="flex-1" style={{ paddingVertical: 4 }}>
+      <View className="flex-row items-center" style={{ gap: 6 }}>
+        <SymbolView name={icon} tintColor={ICON_TINT} size={14} />
         <Text {...COMPACT_TEXT} numberOfLines={1} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1.1 }}>
           {label}
         </Text>
-        <SymbolView name={icon} tintColor={ICON_TINT} size={16} />
       </View>
       <View className="flex-row items-baseline" style={{ gap: 5, marginTop: 10 }}>
-        <DisplayText {...COMPACT_TEXT} className="text-white" style={{ fontSize: 28, lineHeight: 34 }}>
+        <DisplayText {...COMPACT_TEXT} className="text-white" style={{ fontSize: 36, lineHeight: 42 }}>
           {value}
         </DisplayText>
         <Text {...COMPACT_TEXT} className="font-semibold text-muted" style={{ fontSize: 13 }}>

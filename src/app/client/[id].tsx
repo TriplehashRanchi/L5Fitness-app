@@ -179,6 +179,16 @@ export default function ClientScreen() {
               <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={16} />
             </Pressable>
             <DisplayText className="flex-1 text-2xl font-bold text-white" numberOfLines={1}>{name}</DisplayText>
+            {detail ? (
+              <Pressable
+                onPress={() => router.push({ pathname: '/chat/[id]', params: { id, name, image: detail.client.image ?? '' } })}
+                accessibilityRole="button"
+                accessibilityLabel={`Chat with ${name}`}
+                className="h-11 flex-row items-center gap-2 rounded-full bg-brand px-4 active:opacity-80">
+                <SymbolView name={{ ios: 'bubble.left.fill', android: 'chat', web: 'chat' }} tintColor="#050a07" size={15} />
+                <Text maxFontSizeMultiplier={1.3} className="text-sm font-black text-ink">Chat</Text>
+              </Pressable>
+            ) : null}
           </View>
 
           {error ? (

@@ -194,7 +194,10 @@ function MealsSection({
   pending,
   canTick,
   onToggle,
+  first,
 }: {
+  /** nothing sits above it */
+  first?: boolean;
   day: MyDay;
   locale: string;
   pending: Set<string>;
@@ -206,7 +209,7 @@ function MealsSection({
   const icon = { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' } as const;
   if (slots.length === 0) {
     return (
-      <Section icon={icon} color={MEALS} title="Meals">
+      <Section first={first} icon={icon} color={MEALS} title="Meals">
         <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
           {day.coaching.status === 'accepted'
             ? 'No diet plan has been added for today yet.'
@@ -219,7 +222,7 @@ function MealsSection({
   }
   const allDone = day.diet.done >= day.diet.total;
   return (
-    <Section icon={icon} color={MEALS} title="Meals" status={`${day.diet.done} of ${day.diet.total}`} done={allDone}>
+    <Section first={first} icon={icon} color={MEALS} title="Meals" status={`${day.diet.done} of ${day.diet.total}`} done={allDone}>
       {slots.map(({ slot, items }, s) => (
         <View key={slot} style={{ marginTop: s === 0 ? 0 : 10 }}>
           <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 2 }}>
@@ -505,6 +508,10 @@ export type ChecklistProps = {
   lastDrinkMl?: number | null;
   onOpenSteps?: () => void;
   onAddPhoto?: (type: MealType) => void;
+  /** Leave the workout row out. */
+  hideWorkout?: boolean;
+  /** No card around it: the rows sit straight on the page, lined up with the page's own margin. */
+  plain?: boolean;
 };
 
 const PART_OF = { workout: 'Workout', meal: 'Meals', water: 'Water', steps: 'Steps' } as const;
@@ -513,17 +520,20 @@ const PART_OF = { workout: 'Workout', meal: 'Meals', water: 'Water', steps: 'Ste
  * The day as one list: workout, meals, meal photos, water, steps. Each is a row that opens in place.
  * The first thing still to do starts open; when everything is done, all rows start closed.
  */
-export function Checklist({ day, locale, pending, onToggle, canTick = true, onStart, onDrink, onUndoDrink, waterBusy = false, lastDrinkMl = null, onOpenSteps, onAddPhoto }: ChecklistProps) {
+export function Checklist({ day, locale, pending, onToggle, canTick = true, onStart, onDrink, onUndoDrink, waterBusy = false, lastDrinkMl = null, onOpenSteps, onAddPhoto, hideWorkout = false, plain = false }: ChecklistProps) {
   const [open, setOpen] = useState<string | null>(() => {
     const next = nextTask(day);
-    return next ? PART_OF[next.kind] : null;
+    return next && !(hideWorkout && next.kind === 'workout') ? PART_OF[next.kind] : null;
   });
   const value = useMemo(() => ({ open, setOpen }), [open]);
   return (
     <OpenPart.Provider value={value}>
-      <View className="mx-5 mb-4 overflow-hidden rounded-3xl border border-white/5 bg-card">
-        <WorkoutSection day={day} onStart={onStart} />
-        <MealsSection day={day} locale={locale} pending={pending} canTick={canTick} onToggle={onToggle} />
+      <View
+        className={plain ? 'mb-4' : 'mx-5 mb-4 overflow-hidden rounded-3xl border border-white/5 bg-card'}
+        // the rows carry 16 of their own side padding, so 4 more lines them up with the page's 20
+        style={plain ? { marginHorizontal: 4, borderTopWidth: 1, borderTopColor: HAIRLINE } : undefined}>
+        {hideWorkout ? null : <WorkoutSection day={day} onStart={onStart} />}
+        <MealsSection first={hideWorkout} day={day} locale={locale} pending={pending} canTick={canTick} onToggle={onToggle} />
         <PhotosSection day={day} onAdd={onAddPhoto} />
         <WaterSection day={day} busy={waterBusy} lastDrinkMl={lastDrinkMl} onDrink={onDrink} onUndo={onUndoDrink} />
         <StepsSection day={day} locale={locale} onOpen={onOpenSteps} />

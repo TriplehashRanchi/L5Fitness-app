@@ -76,6 +76,8 @@ export function DaySummary({
   slim,
   title,
   action,
+  hideWorkout = false,
+  plain = false,
 }: {
   day: MyDay;
   percent: number;
@@ -86,13 +88,17 @@ export function DaySummary({
   title?: string;
   /** Something to press at the right of the card, such as "Today". */
   action?: ReactNode;
+  /** Leave the workout meter out. */
+  hideWorkout?: boolean;
+  /** No card around it: it sits straight on the page. */
+  plain?: boolean;
 }) {
   const counts = dayCounts(day);
   const complete = counts.total > 0 && counts.done >= counts.total;
   const part = (v: number, goal: number) => (goal > 0 ? v / goal : 0);
 
   return (
-    <View className="mx-5 mb-4 rounded-3xl border border-white/5 bg-card" style={{ padding: 18 }}>
+    <View className={plain ? 'mx-5 mb-2' : 'mx-5 mb-4 rounded-3xl border border-white/5 bg-card'} style={plain ? { paddingTop: 6, paddingBottom: 14 } : { padding: 18 }}>
       <View
         className="flex-row items-center"
         style={{ gap: 18 }}
@@ -118,6 +124,7 @@ export function DaySummary({
       </View>
 
       <View className="flex-row" style={{ marginTop: slim ? 14 : 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.07)' }}>
+        {hideWorkout ? null : (
         <Stat
           icon={{ ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' }}
           color={BRAND}
@@ -125,6 +132,7 @@ export function DaySummary({
           label="Workout"
           ratio={day.training?.done ? 1 : 0}
         />
+        )}
         <Stat
           icon={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }}
           color={MEALS}
