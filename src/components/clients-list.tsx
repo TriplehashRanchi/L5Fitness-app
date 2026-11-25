@@ -14,6 +14,7 @@ import { messageFrom } from '@/lib/http';
 import { getUnreadChats } from '@/lib/chat-api';
 import { useNewChatMessages } from '@/lib/realtime';
 import { listClients, type ClientSummary } from '@/lib/wellness-api';
+import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const WEB_TOP_BAR = 72;
@@ -23,13 +24,26 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 export function ClientsList() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  // The admin sees this list too, but the line to the admin is for dietitians.
+  const isDietitian = useProfile().role === 'dietitian';
   const [query, setQuery] = useState('');
   const [clients, setClients] = useState<ClientSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Unread chat messages from each client. */
   const [unread, setUnread] = useState<Record<string, number>>({});
+  /** Unread messages from the admin. */
+  const [adminUnread, setAdminUnread] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const latest = useRef(0);
+
+  const loadUnread = useCallback(() => {
+    getUnreadChats()
+      .then((u) => {
+        setUnread(Object.fromEntries(u.clients.map((c) => [c.memberId, c.unread])));
+        setAdminUnread(u.admin ?? 0);
+      })
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async (q: string) => {
     const id = ++latest.current;
@@ -39,13 +53,11 @@ export function ClientsList() {
       setClients(res.clients);
       setError(null);
       // The badges are a nicety: the list still shows if they cannot be loaded.
-      getUnreadChats()
-        .then((u) => setUnread(Object.fromEntries(u.clients.map((c) => [c.memberId, c.unread]))))
-        .catch(() => {});
+      loadUnread();
     } catch (e) {
       if (id === latest.current) setError(messageFrom(e));
     }
-  }, []);
+  }, [loadUnread]);
 
   // Search as they type, after a short pause.
   useEffect(() => {
@@ -60,12 +72,8 @@ export function ClientsList() {
     }, [load])
   );
 
-  // A client wrote just now: bring the unread badges up to date.
-  useNewChatMessages(() => {
-    getUnreadChats()
-      .then((u) => setUnread(Object.fromEntries(u.clients.map((c) => [c.memberId, c.unread]))))
-      .catch(() => {});
-  });
+  // A client (or the admin) wrote just now: bring the unread badges up to date.
+  useNewChatMessages(loadUnread);
 
   const isWeb = Platform.OS === 'web';
 
@@ -120,6 +128,34 @@ export function ClientsList() {
         ) : null}
 
         <View className="mt-5 gap-3 px-5">
+          {/* The dietitian's own line to the gym's admin. */}
+          {isDietitian && !query ? (
+            <Pressable
+              onPress={() => router.push('/chat/admin')}
+              accessibilityRole="button"
+              accessibilityLabel={adminUnread ? `Message the admin, ${adminUnread} unread` : 'Message the admin'}
+              className="flex-row items-center gap-4 rounded-3xl border border-white/5 bg-card p-4 active:opacity-80">
+              <View className="items-center justify-center" style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(56,189,248,0.15)' }}>
+                <SymbolView name={{ ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }} tintColor="#38bdf8" size={24} />
+              </View>
+              <View className="flex-1">
+                <Text {...COMPACT_TEXT} numberOfLines={1} className="text-base font-bold text-white">
+                  Admin
+                </Text>
+                <Text {...COMPACT_TEXT} numberOfLines={1} className="text-xs text-muted">
+                  {adminUnread ? 'New message from the admin' : 'Message the gym admin'}
+                </Text>
+              </View>
+              {adminUnread ? (
+                <View className="items-center justify-center rounded-full bg-brand" style={{ minWidth: 24, height: 24, paddingHorizontal: 7 }}>
+                  <Text {...COMPACT_TEXT} className="text-xs font-black text-ink">
+                    {adminUnread > 99 ? '99+' : adminUnread}
+                  </Text>
+                </View>
+              ) : null}
+              <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor="#8fa396" size={14} />
+            </Pressable>
+          ) : null}
           {clients === null && !error ? (
             <View className="items-center py-12">
               <ActivityIndicator color={BRAND} />

@@ -5,19 +5,18 @@ import { ActivityIndicator, Platform, Pressable, Text, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
-import { ChatThread } from '@/components/chat/chat-thread';
+import { ChatThread, statusLine } from '@/components/chat/chat-thread';
 import { ClientsList } from '@/components/clients-list';
 import { CompleteProfileButton } from '@/components/complete-profile-button';
 import { DisplayText } from '@/components/display-text';
 import { BottomTabInset } from '@/constants/theme';
-import { getMyChat, sendMyMessage, type MyChat } from '@/lib/chat-api';
+import { getMyChat, sendMyMessage, type ChatWindow, type MyChat } from '@/lib/chat-api';
 import { messageFrom } from '@/lib/http';
 import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const WEB_TOP_BAR = 72;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
-const MEMBER = { side: 'member' } as const;
 
 export default function DietScreen() {
   const { role } = useProfile();
@@ -35,9 +34,9 @@ function DietitianChat() {
   const [info, setInfo] = useState<Pick<MyChat, 'coaching' | 'dietitian'> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (after?: string) => {
+  const load = useCallback(async (window?: ChatWindow) => {
     try {
-      const page = await getMyChat(after);
+      const page = await getMyChat(window);
       setInfo({ coaching: page.coaching, dietitian: page.dietitian });
       setError(null);
       return page;
@@ -77,26 +76,33 @@ function DietitianChat() {
         </View>
       ) : (
         <ChatThread
-          thread={MEMBER}
+          role="member"
           peer={info?.dietitian ?? null}
           load={load}
           send={sendMyMessage}
           bottomInset={bottom}
           emptyTitle={`Say hello to ${name}`}
           emptyText="Ask about your meals, your plan or anything you are unsure of. They will get a notification."
-          header={
+          header={(status) => (
             <View className="flex-row items-center px-5" style={{ gap: 12, paddingTop: top, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' }}>
-              {info ? <Avatar name={name} image={info.dietitian?.image ?? null} size={44} /> : <ActivityIndicator color={BRAND} />}
+              {info ? (
+                <View>
+                  <Avatar name={name} image={info.dietitian?.image ?? null} size={44} />
+                  {status.online ? <View style={{ position: 'absolute', right: 0, bottom: 0, width: 13, height: 13, borderRadius: 7, backgroundColor: BRAND, borderWidth: 2, borderColor: '#000000' }} /> : null}
+                </View>
+              ) : (
+                <ActivityIndicator color={BRAND} />
+              )}
               <View className="flex-1">
                 <DisplayText {...COMPACT_TEXT} accessibilityRole="header" numberOfLines={1} className="text-[22px] leading-7 tracking-tight text-white">
                   {name}
                 </DisplayText>
-                <Text {...COMPACT_TEXT} numberOfLines={1} className="text-xs text-muted">
-                  {error && !info ? error : 'Your dietitian'}
+                <Text {...COMPACT_TEXT} numberOfLines={1} accessibilityLiveRegion="polite" className={`text-xs ${status.online || status.typing ? 'font-bold text-brand' : 'text-muted'}`}>
+                  {error && !info ? error : statusLine(status, 'Your dietitian')}
                 </Text>
               </View>
             </View>
-          }
+          )}
         />
       )}
     </View>

@@ -166,8 +166,10 @@ export async function undoWater(id: string, day: string) {
 // ── Meals ────────────────────────────────────────────────────────────────────────────────────
 
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
-const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
-const UPLOAD_TIMEOUT_MS = 60_000;
+// Camera photos are sent as taken (see add-meal.tsx), so the limit and the time allowed leave room for them.
+// The API has the same limit (controllers/upload.controller.js).
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 120_000;
 
 /**
  * Uploads a photo straight to storage with a short-lived signed link, and returns its id.
@@ -182,7 +184,7 @@ export async function uploadPhoto(uri: string, mimeType?: string | null): Promis
   }
   const wanted = (mimeType || blob.type || 'image/jpeg').toLowerCase().replace('image/jpg', 'image/jpeg');
   const contentType = PHOTO_TYPES.includes(wanted) ? wanted : 'image/jpeg';
-  if (blob.size > MAX_PHOTO_BYTES) throw new Error('That photo is larger than 10 MB. Choose a smaller one.');
+  if (blob.size > MAX_PHOTO_BYTES) throw new Error('That photo is larger than 20 MB. Choose a smaller one.');
   if (blob.size === 0) throw new Error('That photo is empty. Please choose another one.');
 
   const created = await api<{ upload: { id: string }; uploadUrl: string; headers: Record<string, string> }>(

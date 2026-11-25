@@ -73,7 +73,7 @@ export default function HomeScreen() {
   const userId = session?.user.id;
   const userName = session?.user.name ?? 'Athlete';
   const { unread, openInbox } = useNotifications();
-  const onAvatarPress = () => router.navigate('/profile');
+  const openCoach = () => router.push('/ai' as never);
 
   // Everything "today" is computed in the phone's time zone.
   const nowParts = getZonedParts(now, format.timeZone);
@@ -257,7 +257,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}>
         <HomeHeader
           userName={userName}
-          image={session?.user.image}
           unread={unread}
           today={today}
           firstWeekday={firstWeekday}
@@ -265,7 +264,7 @@ export default function HomeScreen() {
           offset={weekOffset}
           onOffsetChange={setWeekOffset}
           onNotifications={() => openInbox(true)}
-          onProfile={onAvatarPress}
+          onCoach={openCoach}
           hero={
             <BodyHero
               data={data}

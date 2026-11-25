@@ -13,7 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 
-import { Avatar } from '@/components/avatar';
+import { CoachLogo } from '@/components/coach-logo';
 import { DisplayText } from '@/components/display-text';
 import { blobPath } from '@/lib/blob-path';
 import { addDays, formatWeekday, getWeekDays, isSameDay, type CalendarDay } from '@/lib/datetime';
@@ -107,6 +107,32 @@ function NotificationBell({ unread, onPress }: { unread: number; onPress: () => 
   );
 }
 
+/**
+ * The way into the AI coach, at the top right of Home: the coach's own mark (a glossy ball with a dumbbell
+ * and the AI spark) inside a green ring that breathes slowly, so it reads as something alive you can talk to.
+ */
+function CoachButton({ onPress }: { onPress: () => void }) {
+  const reduced = useReducedMotion();
+  const glow = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    glow.value = withRepeat(withSequence(withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.quad) }), withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.quad) })), -1);
+  }, [reduced, glow]);
+  const ringStyle = useAnimatedStyle(() => ({ opacity: 0.25 + glow.value * 0.45, transform: [{ scale: 1 + glow.value * 0.12 }] }));
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Ask L5 Coach, your AI assistant"
+      className="items-center justify-center active:opacity-80"
+      style={{ width: 46, height: 46 }}>
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 44, height: 44, borderRadius: 22, top: 3, borderWidth: 2, borderColor: BRAND }, ringStyle]} />
+      <CoachLogo size={50} />
+    </Pressable>
+  );
+}
+
 export function monthYear(day: CalendarDay, locale: string) {
   return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
     new Date(Date.UTC(day.year, day.month - 1, day.day))
@@ -147,7 +173,6 @@ export function WeekArrows({ onStep }: { onStep: (step: number) => void }) {
  */
 export function HomeHeader({
   userName,
-  image,
   unread,
   today,
   firstWeekday,
@@ -155,11 +180,10 @@ export function HomeHeader({
   offset,
   onOffsetChange,
   onNotifications,
-  onProfile,
+  onCoach,
   hero,
 }: {
   userName: string;
-  image?: string | null;
   unread: number;
   today: CalendarDay;
   firstWeekday: number;
@@ -167,7 +191,8 @@ export function HomeHeader({
   offset: number;
   onOffsetChange: (offset: number) => void;
   onNotifications: () => void;
-  onProfile: () => void;
+  /** Opens the AI coach. (The member's own profile is the Profile tab.) */
+  onCoach: () => void;
   /** Shown under the greeting, above the calendar. */
   hero?: ReactNode;
 }) {
@@ -187,13 +212,7 @@ export function HomeHeader({
         </View>
         <View className="flex-row items-center gap-2.5">
           <NotificationBell unread={unread} onPress={onNotifications} />
-          <Pressable
-            onPress={onProfile}
-            accessibilityRole="button"
-            accessibilityLabel="Open your profile"
-            className="rounded-full border border-white/10 p-0.5 active:opacity-80">
-            <Avatar name={userName} image={image} size={42} />
-          </Pressable>
+          <CoachButton onPress={onCoach} />
         </View>
       </View>
 

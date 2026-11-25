@@ -1,7 +1,7 @@
 /**
  * The live connection to L5Fitness-api (Socket.IO, same address as the API).
  *
- * It only RECEIVES news (a new chat message, "seen", "typing") and sends small signals back.
+ * It only RECEIVES news (a new chat message, "seen", "typing", "online") and sends small signals back.
  * Messages themselves are saved through the normal API, so nothing is lost if this connection drops:
  * the chat screen falls back to asking the API every few seconds until it is back.
  *
@@ -58,15 +58,27 @@ export function releaseSocket() {
   socket = null;
 }
 
-/** For a dietitian's client list: runs `onNew` whenever one of their clients writes. */
-export function useNewChatMessages(onNew: (memberId: string) => void) {
+/** What the server says when someone writes to the signed-in person, wherever in the app they are. */
+export type ChatNudge = {
+  threadId: string;
+  kind: 'client' | 'staff';
+  memberId: string | null;
+  dietitianId: string;
+  from: 'member' | 'dietitian' | 'admin';
+  senderName: string | null;
+  preview: string;
+  at: string;
+};
+
+/** Runs `onNew` whenever someone writes to the signed-in person (for unread badges). */
+export function useNewChatMessages(onNew: (nudge: ChatNudge) => void) {
   const latest = useRef(onNew);
   useEffect(() => {
     latest.current = onNew;
   });
   useEffect(() => {
     const s = acquireSocket();
-    const handler = (p: { memberId: string }) => latest.current(p.memberId);
+    const handler = (p: ChatNudge) => p && latest.current(p);
     s.on('chat:new', handler);
     return () => {
       s.off('chat:new', handler);

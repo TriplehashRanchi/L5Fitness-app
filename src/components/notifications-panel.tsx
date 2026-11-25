@@ -1,4 +1,5 @@
 import { useRouter, type Href } from "expo-router";
+import { Image } from "expo-image";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useState } from "react";
 import {
@@ -28,18 +29,22 @@ import {
   type Screen,
 } from "@/lib/notifications-api";
 import { useNotifications } from "@/providers/notifications-provider";
+import { useProfile } from "@/providers/profile-provider";
 
 const BRAND = "#3ddc68";
-const INK = "#050a07";
-const MUTED = "#8fa396";
+/** The second line of a notification: lighter than the usual muted green-grey, so it is easy to read. */
+const SUBTLE = "#c9d3cc";
 const PANEL = "#0d1f14";
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const PAGE = 30;
 
-/** Where a message can take the member, and the words on its button. Inbox and Home messages stay here. */
-const GO: Partial<Record<Screen, { href: Href; label: string }>> = {
-  diet: { href: "/diet" as Href, label: "Open chat" },
-  logs: { href: "/logs" as Href, label: "Open logs" },
+/**
+ * Where tapping a message takes the person, straight away: a chat message opens the chat, a logs message
+ * opens the logs. Inbox and Home messages have nowhere else to go, so a tap opens them in place to read.
+ */
+const GO: Partial<Record<Screen, Href>> = {
+  diet: "/diet" as Href,
+  logs: "/logs" as Href,
 };
 
 /** "5m", "3h", "Yesterday", or the date. */
@@ -61,72 +66,76 @@ function ago(iso: string) {
   });
 }
 
+/**
+ * One notification in two lines, and no more:
+ *   line 1  who it is from and what happened ("Priya sent a message"), with the time at the right
+ *   line 2  the start of the text, ending in "…" when there is more
+ * The picture says what kind it is: a message, something from the dietitian, or the gym itself (its logo).
+ * The first line is white and the second a light grey, so both read easily on the dark panel.
+ * An unread one has a green dot and bolder words. A message that leads nowhere opens in place when
+ * tapped (`open`), and only then shows its whole text.
+ */
 function Row({
   n,
   open,
+  last,
   onPress,
-  onGo,
 }: {
   n: AppNotification;
   open: boolean;
+  /** The last row of its group: no line under it. */
+  last: boolean;
   onPress: () => void;
-  onGo: (href: Href) => void;
 }) {
   const admin = n.fromRole === "admin";
-  const go = GO[n.screen];
+  const sender = admin ? "L5 Fitness" : n.from;
+  // What kind of notification this is decides its picture:
+  //   a chat message          → a message bubble
+  //   something from the gym  → the L5 Fitness logo
+  //   something from the dietitian (a plan, new targets) → the dietitian's fork and knife
+  const kind = n.screen === "diet" ? "message" : admin ? "company" : "dietitian";
   return (
     <Animated.View layout={LinearTransition.duration(180)}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${n.read ? "" : "Unread. "}${admin ? "L5 Fitness" : n.from}. ${n.title}. ${n.body}`}
-        className="flex-row active:opacity-80"
-        style={{
-          gap: 12,
-          padding: 12,
-          borderRadius: 20,
-          marginBottom: 6,
-          backgroundColor: open
-            ? "rgba(255,255,255,0.06)"
-            : n.read
-              ? "transparent"
-              : "rgba(61,220,104,0.08)",
-        }}
+        accessibilityLabel={`${n.read ? "" : "Unread. "}${sender}. ${n.title}. ${n.body}`}
+        className="flex-row items-center active:opacity-70"
+        style={{ gap: 12, paddingHorizontal: 12, paddingVertical: 13 }}
       >
-        <View
-          className="items-center justify-center"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
-            backgroundColor: n.read
-              ? "rgba(255,255,255,0.06)"
-              : "rgba(61,220,104,0.18)",
-          }}
-        >
-          <SymbolView
-            name={
-              admin
-                ? {
-                    ios: "megaphone.fill",
-                    android: "campaign",
-                    web: "campaign",
-                  }
-                : {
-                    ios: "fork.knife",
-                    android: "restaurant",
-                    web: "restaurant",
-                  }
-            }
-            tintColor={n.read ? MUTED : BRAND}
-            size={17}
+        {kind === "company" ? (
+          <Image
+            source={require("@/assets/images/icon.png")}
+            style={{ width: 40, height: 40, borderRadius: 20 }}
+            contentFit="cover"
+            accessible={false}
           />
-        </View>
+        ) : (
+          <View
+            className="items-center justify-center"
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: n.read ? "rgba(255,255,255,0.08)" : "rgba(61,220,104,0.18)" }}
+          >
+            <SymbolView
+              name={
+                kind === "message"
+                  ? { ios: "bubble.left.fill", android: "chat", web: "chat" }
+                  : { ios: "fork.knife", android: "restaurant", web: "restaurant" }
+              }
+              tintColor={n.read ? "#e3ebe5" : BRAND}
+              size={18}
+            />
+          </View>
+        )}
         <View className="flex-1">
           <View className="flex-row items-center" style={{ gap: 8 }}>
-            <Text {...COMPACT_TEXT} className="flex-1 font-semibold text-muted" style={{ fontSize: 12 }} numberOfLines={1}>
-              {admin ? "L5 Fitness" : n.from}
+            <Text
+              {...COMPACT_TEXT}
+              className={n.read ? "flex-1 font-semibold text-white" : "flex-1 font-bold text-white"}
+              style={{ fontSize: 15, lineHeight: 20 }}
+              numberOfLines={open ? undefined : 1}
+            >
+              {n.title}
             </Text>
             <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12 }}>
               {ago(n.createdAt)}
@@ -135,56 +144,20 @@ function Row({
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND }} />
             ) : null}
           </View>
-          <Text
-            {...COMPACT_TEXT}
-            className={n.read ? "font-semibold text-white" : "font-bold text-white"}
-            style={{ fontSize: 15, lineHeight: 20, marginTop: 2 }}
-            numberOfLines={open ? undefined : 1}
-          >
-            {n.title}
-          </Text>
-          <Text
-            {...COMPACT_TEXT}
-            selectable={open}
-            className="text-muted"
-            style={{ fontSize: 13, lineHeight: 19, marginTop: 2 }}
-            numberOfLines={open ? undefined : 2}
-          >
-            {n.body}
-          </Text>
-          {open && go ? (
-            <Pressable
-              onPress={() => onGo(go.href)}
-              accessibilityRole="button"
-              accessibilityLabel={go.label}
-              className="flex-row items-center self-start rounded-full bg-brand active:opacity-80"
-              style={{
-                gap: 6,
-                minHeight: 36,
-                paddingHorizontal: 14,
-                marginTop: 10,
-              }}
+          {n.body ? (
+            <Text
+              {...COMPACT_TEXT}
+              selectable={open}
+              ellipsizeMode="tail"
+              style={{ fontSize: 13, lineHeight: 18, marginTop: 2, color: SUBTLE }}
+              numberOfLines={open ? undefined : 1}
             >
-              <Text
-                {...COMPACT_TEXT}
-                className="font-black text-ink"
-                style={{ fontSize: 13 }}
-              >
-                {go.label}
-              </Text>
-              <SymbolView
-                name={{
-                  ios: "arrow.right",
-                  android: "arrow_forward",
-                  web: "arrow_forward",
-                }}
-                tintColor={INK}
-                size={11}
-              />
-            </Pressable>
+              {n.body}
+            </Text>
           ) : null}
         </View>
       </Pressable>
+      {last ? null : <View style={{ height: 1, marginLeft: 62, marginRight: 12, backgroundColor: "rgba(255,255,255,0.06)" }} />}
     </Animated.View>
   );
 }
@@ -198,6 +171,7 @@ function Inbox({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { role } = useProfile();
   const { refresh, unread } = useNotifications();
   const [items, setItems] = useState<AppNotification[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -233,9 +207,18 @@ function Inbox({
     }
   };
 
-  // A tap opens the message right here and marks it read.
+  const go = (href: Href) => {
+    onClose();
+    router.navigate(href);
+  };
+
+  // A tap marks the message read and goes where it points (a chat message opens the chat). A message
+  // that points nowhere opens right here instead, so it can be read in full.
   const press = (n: AppNotification) => {
-    setOpenId((id) => (id === n.id ? null : n.id));
+    // For a dietitian a message from the admin is in their own chat with the admin, not in the client list.
+    const href = n.screen === "diet" && n.fromRole === "admin" && role === "dietitian" ? ("/chat/admin" as Href) : GO[n.screen];
+    if (href) go(href);
+    else setOpenId((id) => (id === n.id ? null : n.id));
     if (!n.read) {
       setItems(
         (list) =>
@@ -257,11 +240,6 @@ function Inbox({
     }
   };
 
-  const go = (href: Href) => {
-    onClose();
-    router.navigate(href);
-  };
-
   // What was unread when the panel opened stays under "New" until it is closed.
   const [newIds, setNewIds] = useState<Set<string> | null>(null);
   if (items && !newIds) setNewIds(new Set(items.filter((n) => !n.read).map((n) => n.id)));
@@ -273,7 +251,7 @@ function Inbox({
       {...COMPACT_TEXT}
       accessibilityRole="header"
       className="font-bold uppercase text-muted"
-      style={{ fontSize: 11, letterSpacing: 1, marginLeft: 12, marginBottom: 6, marginTop: 4 }}
+      style={{ fontSize: 11, letterSpacing: 1.2, marginLeft: 12, marginBottom: 2, marginTop: 10 }}
     >
       {text}
     </Text>
@@ -452,12 +430,12 @@ function Inbox({
           showsVerticalScrollIndicator={false}
         >
           {fresh.length ? heading("New") : null}
-          {fresh.map((n) => (
-            <Row key={n.id} n={n} open={openId === n.id} onPress={() => press(n)} onGo={go} />
+          {fresh.map((n, i) => (
+            <Row key={n.id} n={n} open={openId === n.id} last={i === fresh.length - 1} onPress={() => press(n)} />
           ))}
           {earlier.length && fresh.length ? heading("Earlier") : null}
-          {earlier.map((n) => (
-            <Row key={n.id} n={n} open={openId === n.id} onPress={() => press(n)} onGo={go} />
+          {earlier.map((n, i) => (
+            <Row key={n.id} n={n} open={openId === n.id} last={i === earlier.length - 1} onPress={() => press(n)} />
           ))}
           {more ? (
             <Pressable

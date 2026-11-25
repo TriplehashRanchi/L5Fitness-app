@@ -1,42 +1,79 @@
 import { useFocusEffect } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { useForegroundReload } from '@/hooks/use-foreground-reload';
-import type { ChatMessage, ChatPage } from '@/lib/chat-api';
+import { newMessageId, type ChatMessage, type LoadChat, type SendChat } from '@/lib/chat-api';
 import { dayLabel, formatTime, getZonedParts, toDayKey } from '@/lib/datetime';
-import { messageFrom } from '@/lib/http';
+import { ApiError, messageFrom } from '@/lib/http';
 import { acquireSocket, releaseSocket } from '@/lib/realtime';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
 const MUTED = '#8fa396';
+const WARN = '#ffc857';
+const BAD = '#ff7a7a';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const MAX_LENGTH = 2000;
 const PEER_AVATAR = 30;
 /** How often an open chat asks the API for new messages: rarely while the live connection is up, often while it is down. */
-const POLL_LIVE_MS = 30_000;
+const POLL_LIVE_MS = 45_000;
 const POLL_OFFLINE_MS = 4000;
+/** A message that could not be sent is tried again by itself after these waits, then left for a tap. */
+const RETRY_AFTER_MS = [1500, 4000, 10_000, 20_000];
 
-/** Whose chat this is: the member's own, or (for a dietitian) one client's. */
-export type ChatSide = { side: 'member' } | { side: 'staff'; memberId: string };
-type LiveMessage = { memberId: string; message: { id: string; body: string; createdAt: string; readAt: string | null; fromMember: boolean } };
+/** The role the person holding the phone speaks with in this conversation. */
+export type ChatRole = 'member' | 'dietitian';
 
-/** A message on screen: one from the server, or one of mine that is still being sent (or failed). */
-type Shown = ChatMessage & { state?: 'sending' | 'failed' };
+/** What the top of the screen can say about the other person and the connection. */
+export type ChatStatus = {
+  /** The live connection is up and has been let into this conversation. */
+  live: boolean;
+  /** The other person is in the app (or the console) right now. */
+  online: boolean;
+  lastSeenAt: string | null;
+  typing: boolean;
+};
+
+type LiveMessage = { threadId: string; message: Omit<ChatMessage, 'mine'> & { from: 'member' | 'dietitian' | 'admin' } };
+type Presence = { id: string; online: boolean; lastSeenAt: string | null };
+/** A message of mine that the server does not have yet. */
+type Pending = { clientId: string; body: string; createdAt: string; state: 'sending' | 'waiting' | 'failed'; reason?: unknown };
+/** A message on screen: one from the server, or one of mine on its way. */
+type Shown = ChatMessage & { state?: Pending['state']; reason?: unknown };
+
+const byTime = (x: ChatMessage, y: ChatMessage) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0);
+/** Worth trying again by itself: no network, a busy server, or "slow down". */
+const passing = (e: unknown) => !(e instanceof ApiError) || e.status >= 500 || e.status === 429;
+
+/** "Online", "typing…", "Last seen 5 min ago", or what the screen says when it knows nothing. */
+export function statusLine(status: ChatStatus, fallback: string) {
+  if (status.typing) return 'typing…';
+  if (status.online) return 'Online';
+  if (!status.lastSeenAt) return fallback;
+  const minutes = Math.max(0, (Date.now() - new Date(status.lastSeenAt).getTime()) / 60_000);
+  if (minutes < 1.5) return 'Last seen just now';
+  if (minutes < 60) return `Last seen ${Math.round(minutes)} min ago`;
+  if (minutes < 60 * 24) return `Last seen ${Math.round(minutes / 60)} h ago`;
+  return `Last seen ${Math.round(minutes / 1440)} days ago`;
+}
 
 /**
  * One conversation: messages newest at the bottom, a box to write in, and a send button.
- * Used by the member (with their dietitian) and by the dietitian (with a client); `load` and `send` say which.
- * New messages, "seen" and "typing" arrive at once over the live connection; if that is down, the screen
- * asks the API every few seconds instead, so the chat keeps working either way.
+ * Used by the member (with their dietitian) and by the dietitian (with a client, or with the admin);
+ * `load` and `send` say which.
+ *
+ * Messages are SAVED through the API with an id made on this phone, so a retry can never store one
+ * twice: what is written without a connection waits and goes out by itself when the way is back.
+ * New messages, "seen", "typing" and "online" arrive at once over the live connection; if that is
+ * down, the screen asks the API every few seconds instead, so the chat keeps working either way.
  */
 export function ChatThread({
   header,
-  thread,
+  role,
   peer,
   load,
   send,
@@ -44,14 +81,13 @@ export function ChatThread({
   emptyTitle,
   emptyText,
 }: {
-  /** Stays at the top, above the messages. */
-  header: ReactNode;
-  thread: ChatSide;
+  /** Stays at the top, above the messages. It is told whether the other person is online or writing. */
+  header: (status: ChatStatus) => ReactNode;
+  role: ChatRole;
   /** The other person: their picture (for example from their Google account) sits beside what they write. */
   peer?: { name: string; image: string | null } | null;
-  /** Everything (no argument) or only what came after a time. */
-  load: (after?: string) => Promise<ChatPage>;
-  send: (body: string) => Promise<{ message: ChatMessage }>;
+  load: LoadChat;
+  send: SendChat;
   /** Room to leave under the writing box while the keyboard is closed (the tab bar, the home indicator). */
   bottomInset: number;
   emptyTitle: string;
@@ -59,50 +95,84 @@ export function ChatThread({
 }) {
   const { now, format } = useDeviceClock();
   const todayKey = toDayKey(getZonedParts(now, format.timeZone));
-  const [messages, setMessages] = useState<Shown[] | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[] | null>(null);
+  const [pending, setPending] = useState<Pending[]>([]);
   const [seenAt, setSeenAt] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [connected, setConnected] = useState(false);
+  /** The live connection is up and has been let into this conversation. */
+  const [live, setLive] = useState(false);
+  /** Said only after a few seconds without a connection, never during a normal start. */
+  const [lost, setLost] = useState(false);
+  const [presence, setPresence] = useState<Presence | null>(null);
+  const [theyType, setTheyType] = useState(false);
+
   const newest = useRef<string | undefined>(undefined);
   const busy = useRef(false);
-  const tempId = useRef(0);
-  /** The live connection is up (and, for a dietitian, has been let into this client's chat). */
-  const [live, setLive] = useState(false);
-  const [theyType, setTheyType] = useState(false);
+  const mounted = useRef(true);
   const focused = useRef(false);
   const emit = useRef<(event: string, payload: unknown) => void>(() => {});
+  const joinRef = useRef<() => void>(() => {});
   const typingSent = useRef(0);
   const typingStop = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const side = thread.side;
-  const clientId = thread.side === 'staff' ? thread.memberId : undefined;
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pendingRef = useRef<Pending[]>([]);
+  const threadRef = useRef<string | null>(null);
+  useEffect(() => {
+    pendingRef.current = pending;
+    threadRef.current = threadId;
+  });
+
+  useEffect(() => {
+    mounted.current = true;
+    const waiting = timers.current;
+    return () => {
+      mounted.current = false;
+      for (const t of waiting.values()) clearTimeout(t);
+      waiting.clear();
+    };
+  }, []);
 
   /** Adds what the server sent, without ever showing a message twice. */
-  const merge = useCallback((incoming: ChatMessage[], replace = false) => {
+  const merge = useCallback((incoming: ChatMessage[]) => {
+    if (!incoming.length) return;
     setMessages((prev) => {
-      const pending = (prev ?? []).filter((m) => m.state);
-      const kept = replace ? [] : (prev ?? []).filter((m) => !m.state);
-      const ids = new Set(kept.map((m) => m.id));
+      const ids = new Set((prev ?? []).map((m) => m.id));
+      const fresh = incoming.filter((m) => !ids.has(m.id));
       // By time: a message of mine can already be here when an earlier one of theirs arrives.
-      const all = [...kept, ...incoming.filter((m) => !ids.has(m.id))].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
-      // Only what a check brought back moves the mark, never a message I just sent (see `deliver`).
-      const last = incoming[incoming.length - 1];
-      if (last && (!newest.current || last.createdAt > newest.current)) newest.current = last.createdAt;
-      return [...all, ...pending];
+      return fresh.length || prev === null ? [...(prev ?? []), ...fresh].sort(byTime) : prev;
     });
+    // A message of mine that the server now has is no longer "being sent".
+    const done = new Set(incoming.map((m) => m.clientId).filter(Boolean));
+    if (done.size) setPending((list) => (list.some((p) => done.has(p.clientId)) ? list.filter((p) => !done.has(p.clientId)) : list));
   }, []);
 
   const refresh = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
     try {
-      const page = await load(newest.current);
-      merge(page.messages, !newest.current);
+      const after = newest.current;
+      const page = await load(after ? { after } : undefined);
+      if (!mounted.current) return;
+      if (!after) {
+        setMessages((prev) => prev ?? []);
+        setHasMore(!!page.hasMore);
+      }
+      merge(page.messages);
+      // Only what a check brought back moves the mark, never a message I just sent.
+      const last = page.messages[page.messages.length - 1];
+      if (last && (!newest.current || last.createdAt > newest.current)) newest.current = last.createdAt;
       setSeenAt(page.seenAt);
+      setThreadId(page.threadId ?? null);
       setError(null);
     } catch (e) {
       // Say so only when there is nothing to show; an open chat just tries again in a moment.
-      setMessages((prev) => {
+      if (mounted.current) setMessages((prev) => {
         if (prev === null) setError(messageFrom(e));
         return prev;
       });
@@ -111,10 +181,38 @@ export function ChatThread({
     }
   }, [load, merge]);
 
+  const deliver = useCallback(
+    async (item: Pending, attempt = 0) => {
+      timers.current.delete(item.clientId);
+      try {
+        const { message } = await send(item.body, item.clientId);
+        if (mounted.current) merge([message]);
+      } catch (e) {
+        if (!mounted.current) return;
+        const again = passing(e) && attempt < RETRY_AFTER_MS.length;
+        setPending((list) => list.map((p) => (p.clientId === item.clientId ? { ...p, state: again ? 'waiting' : 'failed', reason: e } : p)));
+        if (again) timers.current.set(item.clientId, setTimeout(() => void deliver(item, attempt + 1), RETRY_AFTER_MS[attempt]));
+      }
+    },
+    [send, merge]
+  );
+
+  /** Everything still unsent goes out again now (the connection is back, or the app was reopened). */
+  const flush = useCallback(() => {
+    for (const p of pendingRef.current) {
+      if (p.state === 'sending') continue;
+      if (p.state === 'failed' && !passing(p.reason)) continue;
+      const timer = timers.current.get(p.clientId);
+      if (timer) clearTimeout(timer);
+      setPending((list) => list.map((x) => (x.clientId === p.clientId ? { ...x, state: 'sending' } : x)));
+      void deliver(p, 1);
+    }
+  }, [deliver]);
+
   useFocusEffect(
     useCallback(() => {
       focused.current = true;
-      refresh();
+      void refresh();
       const id = setInterval(refresh, live ? POLL_LIVE_MS : POLL_OFFLINE_MS);
       return () => {
         focused.current = false;
@@ -123,52 +221,68 @@ export function ChatThread({
     }, [refresh, live])
   );
 
-  // The live connection: new messages, "seen" and "typing" as they happen.
+  // The live connection: new messages, "seen", "typing" and "online" as they happen.
   useEffect(() => {
     const socket = acquireSocket();
     let typingClear: ReturnType<typeof setTimeout> | null = null;
-    const here = (p: { memberId: string }) => !clientId || p.memberId === clientId;
+    const here = (p?: { threadId?: string }) => !!p && !!threadRef.current && p.threadId === threadRef.current;
+    /** In front of the person: this screen is the one shown, and the app is open. */
+    const watching = () => focused.current && AppState.currentState === 'active';
     emit.current = (event, payload) => {
       if (socket.connected) socket.emit(event, payload);
     };
 
+    const join = () => {
+      const id = threadRef.current;
+      if (!id || !socket.connected) return;
+      socket.emit('chat:join', id, (res?: { ok?: boolean; peer?: Presence }) => {
+        if (threadRef.current !== id) return;
+        setLive(!!res?.ok);
+        if (res?.ok) setPresence(res.peer ?? null);
+      });
+    };
+    joinRef.current = join;
+
     const onConnect = () => {
-      // Anything missed while the connection was down.
-      refresh();
-      if (!clientId) return setLive(true);
-      socket.emit('chat:join', clientId, (res?: { ok?: boolean }) => setLive(!!res?.ok));
+      setConnected(true);
+      // Anything missed while the connection was down, and anything written meanwhile.
+      void refresh();
+      flush();
+      join();
     };
     const onDisconnect = () => {
+      setConnected(false);
       setLive(false);
       setTheyType(false);
     };
     const onMessage = (p: LiveMessage) => {
       if (!here(p)) return;
-      const mine = p.message.fromMember === (side === 'member');
-      const { fromMember: _from, ...rest } = p.message;
-      setMessages((prev) => {
-        const list = prev ?? [];
-        if (list.some((m) => m.id === rest.id)) return list;
-        // My own message coming back: the answer to my send puts it in place, so it is not added twice.
-        if (mine && list.some((m) => m.state === 'sending' && m.body === rest.body)) return list;
-        const sent = [...list.filter((m) => !m.state), { ...rest, mine }].sort((x, y) => (x.createdAt < y.createdAt ? -1 : x.createdAt > y.createdAt ? 1 : 0));
-        return [...sent, ...list.filter((m) => m.state)];
-      });
+      const { from, ...rest } = p.message;
+      const mine = from === role;
+      merge([{ ...rest, mine }]);
       if (!mine) {
         setTheyType(false);
         // The chat is open in front of me, so it has been seen.
-        if (focused.current) socket.emit('chat:read', { memberId: p.memberId });
+        if (watching()) socket.emit('chat:read', { threadId: p.threadId });
       }
     };
-    const onRead = (p: { memberId: string; by: 'member' | 'staff'; at: string }) => {
-      if (here(p) && p.by !== side) setSeenAt(p.at);
+    const onRead = (p: { threadId: string; by: string; at: string }) => {
+      if (here(p) && p.by !== role) setSeenAt(p.at);
     };
-    const onTyping = (p: { memberId: string; from: 'member' | 'staff'; typing: boolean }) => {
-      if (!here(p) || p.from === side) return;
+    const onTyping = (p: { threadId: string; from: string; typing: boolean }) => {
+      if (!here(p) || p.from === role) return;
       setTheyType(p.typing);
       if (typingClear) clearTimeout(typingClear);
       // In case the "stopped" signal never arrives.
       if (p.typing) typingClear = setTimeout(() => setTheyType(false), 6000);
+    };
+    const onPresence = (p: Presence) => setPresence((prev) => (prev && p?.id === prev.id ? p : prev));
+    // The server emptied the room (my dietitian changed, sharing was switched off): ask again.
+    const onReset = (p: { threadId: string }) => {
+      if (!here(p)) return;
+      setLive(false);
+      setPresence(null);
+      void refresh().then(join);
     };
 
     socket.on('connect', onConnect);
@@ -176,6 +290,8 @@ export function ChatThread({
     socket.on('chat:message', onMessage);
     socket.on('chat:read', onRead);
     socket.on('chat:typing', onTyping);
+    socket.on('chat:presence', onPresence);
+    socket.on('chat:reset', onReset);
     if (socket.connected) onConnect();
     return () => {
       if (typingClear) clearTimeout(typingClear);
@@ -185,32 +301,55 @@ export function ChatThread({
       socket.off('chat:message', onMessage);
       socket.off('chat:read', onRead);
       socket.off('chat:typing', onTyping);
-      if (clientId && socket.connected) socket.emit('chat:leave', clientId);
+      socket.off('chat:presence', onPresence);
+      socket.off('chat:reset', onReset);
+      if (socket.connected && threadRef.current) socket.emit('chat:leave', threadRef.current);
       emit.current = () => {};
+      joinRef.current = () => {};
       releaseSocket();
     };
-  }, [side, clientId, refresh]);
+  }, [role, refresh, merge, flush]);
+
+  // The first answer from the API says which conversation this is: only then can its room be joined.
+  useEffect(() => {
+    if (threadId) joinRef.current();
+  }, [threadId]);
+
+  useEffect(() => {
+    if (connected) return;
+    const id = setTimeout(() => setLost(true), 4000);
+    return () => {
+      clearTimeout(id);
+      setLost(false);
+    };
+  }, [connected]);
 
   /** Tells the other side I am writing: at most every 2.5 s, and "stopped" after a pause. */
   const typing = (value: string) => {
     setText(value);
-    const payload = { memberId: clientId };
+    const id = threadRef.current;
     if (typingStop.current) clearTimeout(typingStop.current);
+    if (!id) return;
     if (!value.trim()) {
-      if (typingSent.current) emit.current('chat:typing', { ...payload, typing: false });
+      if (typingSent.current) emit.current('chat:typing', { threadId: id, typing: false });
       typingSent.current = 0;
       return;
     }
     if (Date.now() - typingSent.current > 2500) {
       typingSent.current = Date.now();
-      emit.current('chat:typing', { ...payload, typing: true });
+      emit.current('chat:typing', { threadId: id, typing: true });
     }
     typingStop.current = setTimeout(() => {
       typingSent.current = 0;
-      emit.current('chat:typing', { ...payload, typing: false });
+      emit.current('chat:typing', { threadId: id, typing: false });
     }, 3500);
   };
-  useForegroundReload(refresh);
+
+  // Back in the app: catch up, and send what was waiting.
+  useForegroundReload(() => {
+    void refresh();
+    flush();
+  });
 
   useEffect(() => {
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardOpen(true));
@@ -221,48 +360,61 @@ export function ChatThread({
     };
   }, []);
 
-  const deliver = async (id: string, body: string) => {
-    try {
-      const { message } = await send(body);
-      setMessages((prev) => {
-        const rest = (prev ?? []).filter((m) => m.id !== id && m.id !== message.id);
-        const sent = rest.filter((m) => !m.state);
-        const pending = rest.filter((m) => m.state);
-        return [...sent, message, ...pending];
-      });
-      // `newest` is left alone on purpose: the next check must still ask for anything they wrote just before this.
-    } catch (e) {
-      setMessages((prev) => (prev ?? []).map((m) => (m.id === id ? { ...m, state: 'failed' } : m)));
-      setError(messageFrom(e));
-    }
-  };
-
   const submit = () => {
     const body = text.trim();
     if (!body) return;
-    const id = `local-${++tempId.current}`;
+    const item: Pending = { clientId: newMessageId(), body, createdAt: new Date().toISOString(), state: 'sending' };
     typing('');
     setError(null);
     // Shown at once; it is confirmed (or marked as not sent) when the server answers.
-    setMessages((prev) => [...(prev ?? []), { id, body, mine: true, createdAt: new Date().toISOString(), readAt: null, state: 'sending' }]);
-    void deliver(id, body);
+    setPending((list) => [...list, item]);
+    void deliver(item);
   };
 
-  const retry = (m: Shown) => {
-    setError(null);
-    setMessages((prev) => (prev ?? []).map((x) => (x.id === m.id ? { ...x, state: 'sending' } : x)));
-    void deliver(m.id, m.body);
+  const retry = (clientId: string) => {
+    const item = pendingRef.current.find((p) => p.clientId === clientId);
+    if (!item) return;
+    const timer = timers.current.get(clientId);
+    if (timer) clearTimeout(timer);
+    setPending((list) => list.map((p) => (p.clientId === clientId ? { ...p, state: 'sending' } : p)));
+    void deliver(item);
+  };
+
+  /** The page before the oldest message on screen (the list calls this when it is scrolled to the top). */
+  const loadOlder = async () => {
+    const first = messages?.[0];
+    if (!first || !hasMore || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await load({ before: first.createdAt });
+      if (!mounted.current) return;
+      merge(page.messages);
+      setHasMore(!!page.hasMore);
+    } catch {
+      // Left as it is: scrolling up again tries once more.
+    } finally {
+      if (mounted.current) setLoadingOlder(false);
+    }
   };
 
   // Newest first, because the list is drawn upside down so that it starts at the bottom.
-  const rows = useMemo(() => [...(messages ?? [])].reverse(), [messages]);
+  const rows = useMemo<Shown[]>(
+    () => [...(messages ?? []), ...pending.map((p) => ({ id: p.clientId, body: p.body, createdAt: p.createdAt, readAt: null, mine: true, state: p.state, reason: p.reason }))].reverse(),
+    [messages, pending]
+  );
   const dayOf = (iso: string) => toDayKey(getZonedParts(new Date(iso), format.timeZone));
-  const lastMineId = rows.find((m) => m.mine && !m.state)?.id;
   const canSend = text.trim().length > 0;
+  const status: ChatStatus = { live, online: !!presence?.online, lastSeenAt: presence?.lastSeenAt ?? null, typing: theyType };
 
   return (
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      {header}
+      {header(status)}
+
+      {lost && messages !== null ? (
+        <Text {...COMPACT_TEXT} accessibilityLiveRegion="polite" className="px-5 py-2 text-center text-xs font-semibold" style={{ color: WARN, backgroundColor: 'rgba(255,200,87,0.1)' }}>
+          No connection. Anything you write is sent as soon as it is back.
+        </Text>
+      ) : null}
 
       {messages === null ? (
         <View className="flex-1 items-center justify-center px-8">
@@ -305,6 +457,22 @@ export function ChatThread({
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          // Upside down: the "end" is the oldest message, and the "header" sits under the newest.
+          onEndReached={() => void loadOlder()}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={loadingOlder ? <ActivityIndicator color={BRAND} style={{ marginVertical: 12 }} /> : undefined}
+          ListHeaderComponent={
+            theyType ? (
+              <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`${peer?.name ?? 'They'} is typing`} className="flex-row items-end" style={{ gap: 8, marginBottom: 10 }}>
+                {peer ? <Avatar name={peer.name} image={peer.image} size={PEER_AVATAR} /> : null}
+                <View style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderBottomLeftRadius: 6, backgroundColor: 'rgba(255,255,255,0.09)' }}>
+                  <Text {...COMPACT_TEXT} style={{ fontSize: 15, lineHeight: 22, color: MUTED, fontStyle: 'italic' }}>
+                    typing…
+                  </Text>
+                </View>
+              </View>
+            ) : undefined
+          }
           contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, width: '100%', maxWidth: 840, alignSelf: 'center' }}
           renderItem={({ item, index }) => {
             const older = rows[index + 1];
@@ -312,8 +480,9 @@ export function ChatThread({
             const day = dayOf(item.createdAt);
             const startsDay = !older || dayOf(older.createdAt) !== day;
             // Messages from the same side sit closer together; the time shows on the last of a run.
-            const endsRun = !newer || newer.mine !== item.mine || dayOf(newer.createdAt) !== day;
-            const seen = item.id === lastMineId && !!seenAt && seenAt >= item.createdAt;
+            const endsRun = !newer || newer.mine !== item.mine || dayOf(newer.createdAt) !== day || !!newer.state !== !!item.state;
+            const seen = item.mine && !item.state && !!seenAt && seenAt >= item.createdAt;
+            const refused = item.state === 'failed' && !passing(item.reason);
             return (
               <View>
                 {startsDay ? (
@@ -326,36 +495,37 @@ export function ChatThread({
                   {!item.mine && peer ? (
                     <View style={{ width: PEER_AVATAR, marginBottom: endsRun ? 18 : 0 }}>{endsRun ? <Avatar name={peer.name} image={peer.image} size={PEER_AVATAR} /> : null}</View>
                   ) : null}
-                <View className={`flex-1 ${item.mine ? 'items-end' : 'items-start'}`}>
-                  <View
-                    accessible
-                    accessibilityLabel={`${item.mine ? 'You' : 'They'} wrote: ${item.body}`}
-                    style={{
-                      maxWidth: '82%',
-                      paddingHorizontal: 14,
-                      paddingVertical: 9,
-                      borderRadius: 20,
-                      borderBottomRightRadius: item.mine && endsRun ? 6 : 20,
-                      borderBottomLeftRadius: !item.mine && endsRun ? 6 : 20,
-                      backgroundColor: item.mine ? BRAND : 'rgba(255,255,255,0.09)',
-                      opacity: item.state === 'sending' ? 0.6 : 1,
-                    }}>
-                    <Text selectable {...COMPACT_TEXT} style={{ fontSize: 16, lineHeight: 22, color: item.mine ? INK : '#ffffff' }}>
-                      {item.body}
-                    </Text>
-                  </View>
-                  {item.state === 'failed' ? (
-                    <Pressable onPress={() => retry(item)} accessibilityRole="button" accessibilityLabel="Not sent. Try again" className="min-h-8 justify-center active:opacity-60">
-                      <Text {...COMPACT_TEXT} className="text-xs font-bold" style={{ color: '#ff7a7a' }}>
-                        Not sent · Tap to try again
+                  <View className={`flex-1 ${item.mine ? 'items-end' : 'items-start'}`}>
+                    <View
+                      accessible
+                      accessibilityLabel={`${item.mine ? 'You' : 'They'} wrote: ${item.body}`}
+                      style={{
+                        maxWidth: '82%',
+                        paddingHorizontal: 14,
+                        paddingVertical: 9,
+                        borderRadius: 20,
+                        borderBottomRightRadius: item.mine && endsRun ? 6 : 20,
+                        borderBottomLeftRadius: !item.mine && endsRun ? 6 : 20,
+                        backgroundColor: item.mine ? BRAND : 'rgba(255,255,255,0.09)',
+                        opacity: item.state ? 0.6 : 1,
+                      }}>
+                      <Text selectable {...COMPACT_TEXT} style={{ fontSize: 16, lineHeight: 22, color: item.mine ? INK : '#ffffff' }}>
+                        {item.body}
                       </Text>
-                    </Pressable>
-                  ) : endsRun ? (
-                    <Text {...COMPACT_TEXT} className="mt-1 text-[11px] text-muted" style={{ marginHorizontal: 6 }}>
-                      {item.state === 'sending' ? 'Sending…' : `${formatTime(new Date(item.createdAt), format)}${seen ? ' · Seen' : ''}`}
-                    </Text>
-                  ) : null}
-                </View>
+                    </View>
+                    {item.state === 'failed' ? (
+                      <Pressable onPress={() => retry(item.id)} accessibilityRole="button" accessibilityLabel="Not sent. Try again" className="min-h-8 justify-center active:opacity-60">
+                        <Text {...COMPACT_TEXT} className="text-xs font-bold" style={{ color: BAD }}>
+                          {refused ? `Not sent: ${messageFrom(item.reason)} Tap to try again` : 'Not sent · Tap to try again'}
+                        </Text>
+                      </Pressable>
+                    ) : endsRun ? (
+                      <Text {...COMPACT_TEXT} className="mt-1 text-[11px] text-muted" style={{ marginHorizontal: 6 }}>
+                        {item.state === 'waiting' ? 'Waiting for connection…' : item.state === 'sending' ? 'Sending…' : formatTime(new Date(item.createdAt), format)}
+                        {item.mine && !item.state ? <Text style={{ color: seen ? BRAND : MUTED, fontWeight: seen ? '700' : '400' }}>{seen ? ' · Seen' : ' · Sent'}</Text> : null}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
               </View>
             );
@@ -363,14 +533,8 @@ export function ChatThread({
         />
       )}
 
-      {theyType ? (
-        <Text {...COMPACT_TEXT} accessibilityLiveRegion="polite" className="px-5 pb-1 text-xs font-semibold text-brand" style={{ width: '100%', maxWidth: 840, alignSelf: 'center' }}>
-          Typing…
-        </Text>
-      ) : null}
-
       {error && messages !== null ? (
-        <Text {...COMPACT_TEXT} accessibilityRole="alert" className="px-5 pb-1 text-center text-xs font-semibold" style={{ color: '#ff7a7a' }}>
+        <Text {...COMPACT_TEXT} accessibilityRole="alert" className="px-5 pb-1 text-center text-xs font-semibold" style={{ color: BAD }}>
           {error}
         </Text>
       ) : null}

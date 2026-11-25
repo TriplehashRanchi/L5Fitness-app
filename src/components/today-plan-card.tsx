@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
 import { DietBlock } from '@/components/today-card/diet-block';
@@ -60,13 +61,26 @@ export function TodayPlanCard({
 
   return (
     <View className="mx-5 mb-5" style={{ paddingTop: 8, paddingBottom: 4 }}>
-      <View className="flex-row items-baseline justify-between gap-3">
-        <DisplayText {...COMPACT_TEXT} numberOfLines={1} className="text-[22px] leading-7 tracking-tight text-white">
+      <View className="flex-row items-center gap-3">
+        <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="flex-1 text-[22px] leading-7 tracking-tight text-white">
           Today’s plan
         </DisplayText>
         <Text {...COMPACT_TEXT} numberOfLines={1} className="text-sm text-muted">
           {dateLabel}
         </Text>
+        {/* The whole day on its own screen. */}
+        <Pressable
+          onPress={() => router.push('/today-plan' as never)}
+          hitSlop={8}
+          accessibilityRole="link"
+          accessibilityLabel="See full plan"
+          className="flex-row items-center rounded-full bg-brand active:opacity-80"
+          style={{ gap: 4, minHeight: 34, paddingLeft: 12, paddingRight: 9 }}>
+          <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[13px] font-black text-ink">
+            Full plan
+          </Text>
+          <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor="#050a07" size={11} />
+        </Pressable>
       </View>
       <View className="mt-3">
         {live ?? (!SHOW_WORKOUT ? null : (
@@ -90,15 +104,6 @@ export function TodayPlanCard({
           onOpen={() => router.push('/today-plan' as never)}
         />
       </View>
-      <Pressable
-        onPress={() => router.push('/today-plan' as never)}
-        accessibilityRole="link"
-        accessibilityLabel="See full plan"
-        className="min-h-11 items-center justify-center border-t border-white/5 active:opacity-60">
-        <Text {...COMPACT_TEXT} className="text-sm font-bold text-brand">
-          See full plan
-        </Text>
-      </Pressable>
     </View>
   );
 }

@@ -1,9 +1,9 @@
 import { DisplayText } from '@/components/display-text';
 import { BmiScale, WeightRing, WeightTrend } from '@/components/profile/weight-visuals';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -260,6 +260,15 @@ export default function ProfileScreen() {
     setText(String(profile.weightKg));
     setSheet(true);
   };
+  // "Log your weight" on Home's challenge comes here with ?log=weight: open the box straight away.
+  const { log } = useLocalSearchParams<{ log?: string }>();
+  useEffect(() => {
+    if (log !== 'weight' || !profile) return;
+    router.setParams({ log: undefined });
+    queueMicrotask(openSheet);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [log, profile]);
+
   const roleLabel = role === 'admin' ? 'Admin' : role === 'dietitian' ? 'Dietitian' : 'L5 Athlete';
 
   return (

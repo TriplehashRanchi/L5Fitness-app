@@ -23,18 +23,44 @@ const PHOTO_RATIO = 532 / 371;
 /** Width of the figure as a share of the card width. */
 const FIGURE_SHARE = 0.36;
 
-/** Card outline: rounded rectangle whose top edge has a smooth scoop centred at `cx` (null = flat top). */
+/**
+ * Card outline: a rounded rectangle whose top edge has a smooth scoop centred at `cx` (null = flat top).
+ *
+ * The first and the last day of the week sit right above a corner, where there is no room for a whole
+ * scoop (it used to be squeezed into a sharp, cut-off notch there). For those days the scoop simply runs
+ * on into the corner: that side of the top edge is lowered, and the corner is rounded from there.
+ */
 function cardPath(w: number, h: number, cx: number | null) {
   const r = RADIUS;
-  let top = `M 0 ${r} A ${r} ${r} 0 0 1 ${r} 0`;
-  if (cx != null) {
-    const a = Math.max(r, cx - NOTCH_HALF);
-    const b = Math.min(w - r, cx + NOTCH_HALF);
-    const hl = cx - a;
-    const hr = b - cx;
-    top += ` L ${a} 0 C ${a + hl * 0.55} 0 ${cx - hl * 0.5} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH} C ${cx + hr * 0.5} ${NOTCH_DEPTH} ${b - hr * 0.55} 0 ${b} 0`;
+  const d = NOTCH_DEPTH;
+  const atLeft = cx != null && cx - NOTCH_HALF < r;
+  const atRight = cx != null && cx + NOTCH_HALF > w - r;
+  const wide = cx != null && atLeft && atRight; // a card too narrow for any scoop: keep the top flat
+  const lowLeft = atLeft && !wide;
+  const lowRight = atRight && !wide;
+
+  // Top-left corner, starting lower when the scoop runs into it.
+  let top = lowLeft ? `M 0 ${d + r} A ${r} ${r} 0 0 1 ${r} ${d}` : `M 0 ${r} A ${r} ${r} 0 0 1 ${r} 0`;
+  if (cx != null && !wide) {
+    if (lowLeft) {
+      // Flat at the lowered height as far as the day, then up to the normal top edge.
+      const from = Math.max(cx, r);
+      const b = from + NOTCH_HALF;
+      top += ` L ${from} ${d} C ${from + NOTCH_HALF * 0.5} ${d} ${b - NOTCH_HALF * 0.55} 0 ${b} 0`;
+    } else if (lowRight) {
+      // Down under the day, then flat at the lowered height into the corner.
+      const to = Math.min(cx, w - r);
+      const a = to - NOTCH_HALF;
+      top += ` L ${a} 0 C ${a + NOTCH_HALF * 0.55} 0 ${to - NOTCH_HALF * 0.5} ${d} ${to} ${d}`;
+    } else {
+      const a = cx - NOTCH_HALF;
+      const b = cx + NOTCH_HALF;
+      top += ` L ${a} 0 C ${a + NOTCH_HALF * 0.55} 0 ${cx - NOTCH_HALF * 0.5} ${d} ${cx} ${d} C ${cx + NOTCH_HALF * 0.5} ${d} ${b - NOTCH_HALF * 0.55} 0 ${b} 0`;
+    }
   }
-  return `${top} L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} Z`;
+  // Top-right corner, lower when the scoop runs into it.
+  const right = lowRight ? `L ${w - r} ${d} A ${r} ${r} 0 0 1 ${w} ${d + r}` : `L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r}`;
+  return `${top} ${right} L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} Z`;
 }
 
 /**

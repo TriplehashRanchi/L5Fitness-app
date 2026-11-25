@@ -50,7 +50,13 @@ export class ApiError extends Error {
 /** The server could not be reached at all (offline, timeout, wrong address). */
 export class NetworkError extends Error {}
 
-type Options = { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; token?: string | null; body?: unknown };
+type Options = {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  token?: string | null;
+  body?: unknown;
+  /** How long to wait for an answer. Only the AI coach needs more than the usual 15 seconds. */
+  timeoutMs?: number;
+};
 type ErrorBody = { error?: { code?: string; message?: string } };
 
 /** Sends one request. Returns the status and parsed body; throws only NetworkError. */
@@ -63,7 +69,7 @@ export async function send<T>(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? TIMEOUT_MS);
   try {
     const res = await fetch(API_URL + path, {
       method: options.method ?? 'GET',

@@ -1,242 +1,546 @@
-import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
-import Svg, { Circle, ClipPath, Defs, G, Line, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import { useCallback, useEffect, useState } from 'react';
+import { PanResponder, Pressable, Text, View } from 'react-native';
+import Animated, { Easing, Extrapolation, interpolate, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
+import Svg, { Circle, Path } from 'react-native-svg';
 
+import { ConfirmSheet } from '@/components/confirm-sheet';
 import { DisplayText } from '@/components/display-text';
+import { useDeviceClock } from '@/hooks/use-device-clock';
 import { fmtKg } from '@/lib/body';
+import { getZonedParts, toDayKey } from '@/lib/datetime';
+import { getChallenge, startChallenge, type ChallengeState, type ClaimStatus } from '@/lib/challenge-api';
+import { messageFrom } from '@/lib/http';
+import { useAuth } from '@/providers/auth-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const GOLD = '#ffd66b';
 const INK = '#050a07';
-const STUB = '#0f140f';
 const MUTED = '#8fa396';
+/** Fountain-pen blue, for everything "written" on the cheque. */
+const PEN = '#1b2a6b';
+const PRINT = 'rgba(5,10,7,0.55)';
+const RULE = 'rgba(5,10,7,0.35)';
+const STAMP_RED = '#c8372d';
+const STAMP_GREEN = '#1f8a45';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
-
-const RADIUS = 28;
-/** Radius of the two bites in the sides, where the ticket would tear. */
-const BITE = 13;
-/** How far the trophy stands out above the card's top edge. */
-const POP = 20;
-const TROPHY_W = 132;
-const TROPHY_H = 150;
+const DAY_MS = 86_400_000;
 
 /**
- * The offer at the end of Home. Change the words and numbers here.
- * The app does not know when a member's 90 days began, nor the rules: the card sends them to their dietitian for those.
+ * The challenge at the end of Home. Change the numbers and words here.
+ * The server keeps who started when and judges who reached the goal (GET /challenge); these are only the
+ * words shown before that answer arrives.
  */
-export const WEIGHT_LOSS_OFFER = {
-  tag: '90-day challenge',
-  lead: 'Lose 10 kg in 90 days. Win',
-  prize: '₹50,000',
-  line: 'Hit the goal inside 90 days and the prize is yours.',
-  /** How many kilograms have to come off. */
+export const CHALLENGE = {
+  days: 90,
   goalKg: 10,
-  action: 'Ask your dietitian how to join',
+  prize: '₹50,000',
+  prizeInWords: 'Rupees fifty thousand only',
+  name: '90-day challenge',
 } as const;
 
-/** A ticket outline: rounded corners and a round bite out of each side at `cut`. */
-function ticketPath(w: number, h: number, cut: number) {
-  const r = RADIUS;
-  const b = BITE;
-  return `M ${r} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} L ${w} ${cut - b} A ${b} ${b} 0 0 0 ${w} ${cut + b} L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} L 0 ${cut + b} A ${b} ${b} 0 0 0 0 ${cut - b} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
-}
-
-/** A four-point sparkle centred at x, y. */
-const sparkle = (x: number, y: number, s: number) => {
-  const k = s * 0.28;
-  return `M${x} ${y - s} L${x + k} ${y - k} L${x + s} ${y} L${x + k} ${y + k} L${x} ${y + s} L${x - k} ${y + k} L${x - s} ${y} L${x - k} ${y - k} Z`;
+const dayToMs = (key: string) => {
+  const [y, m, d] = key.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
 };
 
-/** The trophy, drawn flat in ink with a gold star. It floats gently (not when the phone asks for reduced motion). */
-function Trophy() {
+/** "18 Feb 2027" for a day key, in the member's language. */
+function shortDate(key: string, locale: string) {
+  try {
+    return new Date(dayToMs(key) + DAY_MS / 2).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  } catch {
+    return key;
+  }
+}
+
+/** The rubber stamp across the cheque. It lands with a thump the first time it is shown. */
+export const STAMP_COLORS = { red: STAMP_RED, green: STAMP_GREEN } as const;
+
+function Stamp({ label, color, k }: { label: string; color: string; k: number }) {
   const reduce = useReducedMotion();
-  const y = useSharedValue(0);
+  const scale = useSharedValue(reduce ? 1 : 1.9);
+  const opacity = useSharedValue(reduce ? 0.9 : 0);
   useEffect(() => {
     if (reduce) return;
-    y.value = withRepeat(withSequence(withTiming(-6, { duration: 1400, easing: Easing.inOut(Easing.quad) }), withTiming(0, { duration: 1400, easing: Easing.inOut(Easing.quad) })), -1);
-  }, [reduce, y]);
-  const style = useAnimatedStyle(() => ({ transform: [{ translateY: y.value }, { rotate: '6deg' }] }));
+    scale.value = 1.9;
+    opacity.value = 0;
+    scale.value = withDelay(450, withTiming(1, { duration: 220, easing: Easing.in(Easing.cubic) }));
+    opacity.value = withDelay(450, withTiming(0.9, { duration: 160 }));
+    // a new stamp (LOCKED → DAY 1) lands again
+  }, [label, reduce, scale, opacity]);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value, transform: [{ rotate: '-13deg' }, { scale: scale.value }] }));
   return (
-    <Animated.View pointerEvents="none" accessible={false} style={[{ position: 'absolute', right: 8, top: 0, width: TROPHY_W, height: TROPHY_H }, style]}>
-      <Svg width={TROPHY_W} height={TROPHY_H} viewBox="0 0 120 136">
-        <Path d="M30 22 H16 C11 22 9 26 9 31 C9 50 21 61 36 63" fill="none" stroke={INK} strokeWidth={8} strokeLinecap="round" />
-        <Path d="M90 22 H104 C109 22 111 26 111 31 C111 50 99 61 84 63" fill="none" stroke={INK} strokeWidth={8} strokeLinecap="round" />
-        <Path d="M28 12 H92 V46 C92 70 78 86 60 86 C42 86 28 70 28 46 Z" fill={INK} />
-        <Path d="M38 22 V46 C38 58 43 67 50 72" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth={5} strokeLinecap="round" />
-        <Rect x={54} y={84} width={12} height={20} fill={INK} />
-        <Rect x={38} y={102} width={44} height={11} rx={3} fill={INK} />
-        <Rect x={28} y={112} width={64} height={16} rx={5} fill={INK} />
-        <Path d="M60 28 L64.7 39.5 L77 40.4 L67.6 48.4 L70.6 60.4 L60 53.9 L49.4 60.4 L52.4 48.4 L43 40.4 L55.3 39.5 Z" fill={GOLD} />
-      </Svg>
+    <Animated.View
+      pointerEvents="none"
+      style={[{ position: 'absolute', left: '33%', top: '61%', borderWidth: 3 * k, borderColor: color, borderRadius: 8 * k, paddingHorizontal: 12 * k, paddingVertical: 2 * k, backgroundColor: 'rgba(255,248,220,0.35)' }, style]}>
+      <Text maxFontSizeMultiplier={1} style={{ color, fontSize: 19 * k, fontWeight: '900', letterSpacing: 2 * k }}>
+        {label}
+      </Text>
     </Animated.View>
   );
 }
 
-/** Start to minus 10 kg: a track with a mark per kilogram, filled up to what has come off so far. */
-function LossTrack({ share }: { share: number }) {
-  const reduce = useReducedMotion();
-  const [width, setWidth] = useState(0);
-  const shown = useSharedValue(reduce ? share : 0);
-  useEffect(() => {
-    shown.value = reduce ? share : withDelay(250, withTiming(share, { duration: 900, easing: Easing.out(Easing.cubic) }));
-  }, [share, reduce, shown]);
-  const fill = useAnimatedStyle(() => ({ width: shown.value * width }));
-  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: shown.value * width - 12 }] }));
+/**
+ * The prize cheque, made out to the member. Everything on it is drawn to the cheque's width, so it looks
+ * the same on a small and a large phone. It sits a little crooked, and still.
+ */
+export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date: string | null; stamp: string; stampColor: string }) {
+  const [w, setW] = useState(0);
+
+  const k = w / 330; // every size below was drawn for a 330-wide cheque
+  const h = Math.round(w * 0.535);
+  const label = { color: PRINT, fontSize: 8 * k, fontWeight: '800', letterSpacing: 1.2 * k } as const;
+  const written = { color: PEN, fontStyle: 'italic', fontWeight: '700' } as const;
+
   return (
-    <View style={{ height: 24, marginTop: 8, marginRight: 26 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)} accessible={false}>
-      <View style={{ position: 'absolute', left: 0, right: 0, top: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.1)' }} />
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 8, height: 8, borderRadius: 4, backgroundColor: GOLD }, fill]} />
-      {Array.from({ length: 9 }, (_, i) => (
-        <View key={i} style={{ position: 'absolute', left: `${(i + 1) * 10}%`, top: 9, width: 1, height: 6, backgroundColor: 'rgba(255,255,255,0.22)' }} />
-      ))}
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: 24, height: 24, borderRadius: 12, backgroundColor: GOLD, borderWidth: 3, borderColor: STUB }, knob]} />
-      {/* The prize waits at the end of the track. */}
-      <View style={{ position: 'absolute', right: -26, top: 2 }}>
-        <SymbolView name={{ ios: 'trophy.fill', android: 'emoji_events', web: 'emoji_events' }} tintColor={share >= 1 ? GOLD : 'rgba(255,214,107,0.55)'} size={19} />
+    <View style={{ marginTop: 28, marginBottom: 30, marginHorizontal: 8 }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+      {w > 0 ? (
+        <View
+          accessible
+          accessibilityRole="image"
+          accessibilityLabel={`A prize cheque from L5 Fitness. Pay ${payee}, ${CHALLENGE.prize}, for losing ${CHALLENGE.goalKg} kg in ${CHALLENGE.days} days. Stamped: ${stamp}.`}
+          style={{ width: w, height: h, transform: [{ rotate: '-3deg' }] }}>
+          {/* a soft gold glow under the paper */}
+          <View style={{ position: 'absolute', left: -10, right: -10, top: -10, bottom: -10, borderRadius: 28, backgroundColor: 'rgba(255,214,107,0.10)' }} />
+          <View style={{ flex: 1, borderRadius: 14 * k, shadowColor: '#000', shadowOpacity: 0.6, shadowRadius: 18, shadowOffset: { width: 0, height: 12 }, elevation: 12, backgroundColor: '#f6e7b0' }}>
+            <View style={{ flex: 1, borderRadius: 14 * k, overflow: 'hidden' }}>
+              <LinearGradient colors={['#fff8dc', '#f1dc9a']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} />
+              {/* the fine rings printed on the paper */}
+              <Svg width={w} height={h} style={{ position: 'absolute' }}>
+                {[30, 60, 90, 120, 150, 180].map((r, i) => (
+                  <Circle key={r} cx={w * 0.91} cy={h * 0.85} r={r * k} fill="none" stroke={`rgba(122,84,20,${i % 2 === 0 ? 0.1 : 0.05})`} strokeWidth={14 * k} />
+                ))}
+              </Svg>
+              <View style={{ position: 'absolute', left: 7 * k, right: 7 * k, top: 7 * k, bottom: 7 * k, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(122,84,20,0.35)', borderRadius: 9 * k }} />
+
+              {/* who issues it, and the date it must be earned by */}
+              <View style={{ position: 'absolute', left: 18 * k, top: 15 * k }}>
+                <Text maxFontSizeMultiplier={1} style={{ color: INK, fontSize: 13 * k, fontWeight: '900', letterSpacing: 1.2 * k }}>
+                  L5 FITNESS
+                </Text>
+                <Text maxFontSizeMultiplier={1} style={[label, { letterSpacing: 1.4 * k, marginTop: 1 }]}>
+                  90-DAY CHALLENGE CHEQUE
+                </Text>
+              </View>
+              <View style={{ position: 'absolute', right: 18 * k, top: 16 * k, alignItems: 'flex-end' }}>
+                <Text maxFontSizeMultiplier={1} style={label}>
+                  DATE
+                </Text>
+                <Text maxFontSizeMultiplier={1} style={[written, { fontSize: 12 * k, marginTop: 1 }]}>
+                  {date ?? '—  —  —'}
+                </Text>
+              </View>
+
+              {/* pay … */}
+              <View style={{ position: 'absolute', left: 18 * k, right: 122 * k, top: 58 * k }}>
+                <Text maxFontSizeMultiplier={1} style={label}>
+                  PAY
+                </Text>
+                <View style={{ borderBottomWidth: 1, borderBottomColor: RULE, paddingLeft: 4 * k, paddingBottom: 2 * k }}>
+                  <Text maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit style={[written, { fontSize: 19 * k, fontWeight: '800' }]}>
+                    {payee}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ position: 'absolute', right: 18 * k, top: 56 * k, width: 96 * k, height: 36 * k, borderWidth: 1.5, borderColor: INK, borderRadius: 6 * k, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.4)' }}>
+                <DisplayText maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit style={{ color: INK, fontSize: 19 * k, paddingHorizontal: 4 * k }}>
+                  {CHALLENGE.prize}
+                </DisplayText>
+              </View>
+              <View style={{ position: 'absolute', left: 18 * k, right: 18 * k, top: 101 * k, borderBottomWidth: 1, borderBottomColor: RULE, paddingLeft: 4 * k, paddingBottom: 2 * k }}>
+                <Text maxFontSizeMultiplier={1} numberOfLines={1} style={[written, { fontSize: 12.5 * k }]}>
+                  {CHALLENGE.prizeInWords}
+                </Text>
+              </View>
+
+              {/* for … and the signature */}
+              <View style={{ position: 'absolute', left: 18 * k, bottom: 15 * k }}>
+                <Text maxFontSizeMultiplier={1} style={label}>
+                  FOR
+                </Text>
+                <Text maxFontSizeMultiplier={1} style={[written, { fontSize: 11.5 * k }]}>
+                  Losing {CHALLENGE.goalKg} kg in {CHALLENGE.days} days
+                </Text>
+              </View>
+              <View style={{ position: 'absolute', right: 20 * k, bottom: 12 * k, width: 88 * k, alignItems: 'center' }}>
+                <Svg width={88 * k} height={30 * k} viewBox="0 0 90 34">
+                  <Path d="M4 24 C12 4 18 4 20 18 C22 30 28 6 34 14 C38 20 40 24 46 16 C52 8 54 26 62 18 C68 12 74 22 86 14" fill="none" stroke={PEN} strokeWidth={2} strokeLinecap="round" />
+                </Svg>
+                <View style={{ alignSelf: 'stretch', borderTopWidth: 1, borderTopColor: RULE, alignItems: 'center', paddingTop: 2 * k }}>
+                  <Text maxFontSizeMultiplier={1} style={[label, { fontSize: 7.5 * k, letterSpacing: 1 * k }]}>
+                    L5 FITNESS
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+          <Stamp label={stamp} color={stampColor} k={k} />
+        </View>
+      ) : (
+        <View style={{ height: 180 }} />
+      )}
+    </View>
+  );
+}
+
+const BRAND = '#3ddc68';
+const SLIDE_H = 64;
+const SLIDE_PAD = 6;
+const KNOB = SLIDE_H - SLIDE_PAD * 2;
+
+/**
+ * Starts the challenge by dragging the runner from one end of the track to the other. While it is dragged
+ * the label counts the days going by, 1 to 90, so the member feels the whole distance under their thumb.
+ * Letting go before the end sends the runner back; nothing starts by accident.
+ */
+function SlideToStart({ onComplete }: { onComplete: () => void }) {
+  const x = useSharedValue(0);
+  const maxX = useSharedValue(1);
+  const press = useSharedValue(0);
+  const done = useSharedValue(false);
+  /** The day shown while dragging; 0 = not being dragged. */
+  const [day, setDay] = useState(0);
+
+  const finish = () => {
+    if (done.get()) return;
+    done.set(true);
+    onComplete();
+  };
+
+  const [pan] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      // The page behind scrolls up and down: once the runner is held, the drag is ours.
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        press.set(withTiming(1, { duration: 120 }));
+        setDay(1);
+      },
+      onPanResponderMove: (_, g) => {
+        const at = Math.min(Math.max(g.dx, 0), maxX.get());
+        x.set(at);
+        setDay(Math.max(1, Math.round((at / maxX.get()) * CHALLENGE.days)));
+      },
+      onPanResponderRelease: (_, g) => {
+        press.set(withTiming(0, { duration: 160 }));
+        if (g.dx >= maxX.get() * 0.85) {
+          x.set(withTiming(maxX.get(), { duration: 120 }));
+          setDay(CHALLENGE.days);
+          finish();
+        } else {
+          x.set(withSpring(0));
+          setDay(0);
+        }
+      },
+      onPanResponderTerminate: () => {
+        press.set(withTiming(0, { duration: 160 }));
+        x.set(withSpring(0));
+        setDay(0);
+      },
+    })
+  );
+
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }, { scale: 1 + 0.06 * press.value }] }));
+  const trail = useAnimatedStyle(() => ({ width: x.value + KNOB + SLIDE_PAD * 2 }));
+  const hint = useAnimatedStyle(() => ({ opacity: interpolate(x.value, [0, Math.max(maxX.value * 0.25, 1)], [1, 0], Extrapolation.CLAMP) }));
+  const count = useAnimatedStyle(() => ({ opacity: interpolate(x.value, [Math.max(maxX.value * 0.1, 1), Math.max(maxX.value * 0.3, 2)], [0, 1], Extrapolation.CLAMP) }));
+
+  return (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={`Start my ${CHALLENGE.days} days`}
+      accessibilityHint="Slide from left to right, or double tap"
+      accessibilityActions={[{ name: 'activate' }]}
+      onAccessibilityAction={finish}
+      onLayout={(e) => {
+        maxX.set(Math.max(1, e.nativeEvent.layout.width - KNOB - SLIDE_PAD * 2));
+      }}
+      className="justify-center overflow-hidden rounded-full"
+      style={{ height: SLIDE_H, padding: SLIDE_PAD }}>
+      <LinearGradient colors={['#1f9a43', '#0c5a23']} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} pointerEvents="none" />
+      {/* the stretch already covered, in bright green */}
+      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: SLIDE_H / 2, backgroundColor: BRAND }, trail]} />
+
+      {/* the finish flag at the far end */}
+      <View pointerEvents="none" className="flex-row items-center justify-end" style={{ position: 'absolute', left: KNOB + SLIDE_PAD + 10, right: 18, top: 0, bottom: 0 }}>
+        <SymbolView name={{ ios: 'flag.checkered', android: 'sports_score', web: 'sports_score' }} tintColor="#ffffff" size={20} />
       </View>
+
+      <Animated.View pointerEvents="none" className="items-center justify-center" style={[{ position: 'absolute', left: KNOB, right: 44, top: 0, bottom: 0 }, hint]}>
+        {/* the words sit straight on the green track: nothing behind them */}
+        <Text maxFontSizeMultiplier={1.15} numberOfLines={1} className="font-extrabold text-white" style={{ fontSize: 16 }}>
+          Slide to start my {CHALLENGE.days} days
+        </Text>
+      </Animated.View>
+      <Animated.View pointerEvents="none" className="items-center justify-center" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, count]}>
+        <DisplayText maxFontSizeMultiplier={1.15} style={{ color: INK, fontSize: 22, lineHeight: 28 }}>
+          DAY {day || 1}
+        </DisplayText>
+      </Animated.View>
+
+      <Animated.View
+        {...pan.panHandlers}
+        className="items-center justify-center"
+        style={[{ width: KNOB, height: KNOB, borderRadius: KNOB / 2, backgroundColor: '#ffffff', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 6 }, knob]}>
+        <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} tintColor="#0c5a23" size={26} />
+      </Animated.View>
     </View>
   );
 }
 
 /**
- * The challenge as a prize ticket: the gold half is the offer, with the trophy standing out of the top edge;
- * the dark stub under the tear line is the member's own way there, from the start weight in their profile.
+ * The name of the challenge, as an emblem: a flame, a huge "90" and DAY CHALLENGE stacked beside it, over a
+ * strip of racing chevrons. At the right, what is at stake or how long is left.
+ */
+function ChallengeTitle({ status, hot }: { status: string; hot: boolean }) {
+  return (
+    <View accessible accessibilityRole="header" accessibilityLabel={`${CHALLENGE.name}. ${status}`}>
+      <View className="flex-row items-center" style={{ gap: 10 }}>
+        <View className="items-center justify-center" style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: GOLD, transform: [{ rotate: '-8deg' }] }}>
+          <SymbolView name={{ ios: 'flame.fill', android: 'local_fire_department', web: 'local_fire_department' }} tintColor={INK} size={24} />
+        </View>
+        <DisplayText {...COMPACT_TEXT} style={{ color: GOLD, fontSize: 56, lineHeight: 58, letterSpacing: -2 }}>
+          {CHALLENGE.days}
+        </DisplayText>
+        <View className="flex-1">
+          <DisplayText {...COMPACT_TEXT} style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: 1 }}>
+            DAY
+          </DisplayText>
+          <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: 1 }}>
+            CHALLENGE
+          </DisplayText>
+        </View>
+        <View className="rounded-full" style={{ flexShrink: 0, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: hot ? GOLD : 'transparent', borderWidth: 1.5, borderColor: GOLD }}>
+          <Text {...COMPACT_TEXT} numberOfLines={1} className="font-black uppercase" style={{ color: hot ? INK : GOLD, fontSize: 11.5, letterSpacing: 0.8 }}>
+            {status}
+          </Text>
+        </View>
+      </View>
+      {/* racing chevrons: the eye is pulled forward, towards the finish */}
+      <View accessible={false} className="flex-row items-center overflow-hidden" style={{ gap: 3, marginTop: 12, height: 10 }}>
+        {Array.from({ length: 40 }, (_, i) => (
+          <View key={i} style={{ width: 7, height: 10, backgroundColor: GOLD, opacity: 0.12 + 0.88 * (i / 39) ** 2, transform: [{ skewX: '-24deg' }] }} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** Straight to the chat with the dietitian. */
+/** The way to the claim form, or to how the claim is doing once it is sent. Same shape as the chat button, in gold. */
+function ClaimButton({ status, onPress }: { status: ClaimStatus | null; onPress: () => void }) {
+  const label =
+    status === 'paid' ? 'Prize paid · See details' : status === 'approved' ? 'Claim approved · See details' : status === 'rejected' ? 'Fix and resend your claim' : status === 'pending' ? 'Claim sent · In review' : 'Claim your prize';
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className="flex-row items-center rounded-full active:opacity-80"
+      style={{ minHeight: 56, marginTop: 12, paddingLeft: 6, paddingRight: 18, gap: 12, backgroundColor: GOLD }}>
+      <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: INK }}>
+        <SymbolView name={{ ios: 'trophy.fill', android: 'emoji_events', web: 'emoji_events' }} tintColor={GOLD} size={20} />
+      </View>
+      <Text {...COMPACT_TEXT} numberOfLines={1} className="flex-1 font-black" style={{ color: INK, fontSize: 16 }}>
+        {label}
+      </Text>
+      <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={INK} size={16} />
+    </Pressable>
+  );
+}
+
+function ChatButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint="Opens your chat with your dietitian"
+      className="flex-row items-center rounded-full active:opacity-80"
+      style={{ minHeight: 56, marginTop: 16, paddingLeft: 6, paddingRight: 18, gap: 12, backgroundColor: BRAND }}>
+      <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: INK }}>
+        <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} tintColor={BRAND} size={20} />
+      </View>
+      <Text {...COMPACT_TEXT} numberOfLines={1} className="flex-1 font-black" style={{ color: INK, fontSize: 16 }}>
+        {label}
+      </Text>
+      <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={INK} size={16} />
+    </Pressable>
+  );
+}
+
+/**
+ * The 90-day challenge, told with one object: a prize cheque already made out to the member. A stamp says
+ * where they stand (LOCKED, then DAY 12 / 90, then EARNED), and under it are the kilograms lost so far.
+ * The server keeps the start day and decides who has reached the goal.
  */
 export function OfferCard() {
   const router = useRouter();
+  const user = useAuth().session?.user ?? null;
   const { profile } = useProfile();
-  const o = WEIGHT_LOSS_OFFER;
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const [cut, setCut] = useState(0);
+  const { now, format } = useDeviceClock();
+  const todayKey = toDayKey(getZonedParts(now, format.timeZone));
 
-  // What has come off since the start weight in the profile. A gain counts as nothing lost.
-  const lost = profile ? Math.max(0, profile.startWeightKg - profile.weightKg) : null;
-  const share = lost == null ? 0 : Math.min(1, lost / o.goalKg);
-  const reached = lost != null && lost >= o.goalKg;
-  const path = size && cut ? ticketPath(size.w, size.h, cut) : null;
+  const [state, setState] = useState<ChallengeState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [starting, setStarting] = useState(false);
+  /** Counts tries that did not go through, so the slider comes back to its start for another go. */
+  const [attempt, setAttempt] = useState(0);
+
+  const load = useCallback(async () => {
+    try {
+      setState(await getChallenge(todayKey));
+    } catch {
+      // The card simply stays as it was (or hidden, the first time): Home has its own way to say the app is offline.
+    }
+  }, [todayKey]);
+
+  // Each time Home comes back into view: a weight logged in Profile moves the bar at once.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  if (!user || !state) return null;
+
+  const begin = async () => {
+    setAsking(false);
+    if (starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      setState(await startChallenge(todayKey));
+    } catch (e) {
+      setError(messageFrom(e));
+      setAttempt((n) => n + 1);
+      void load();
+    } finally {
+      setStarting(false);
+    }
+  };
+  const toChat = () => router.navigate('/diet');
+
+  const { rules, totals, entry, claim } = state;
+  const reached = !!entry?.reached;
+  const over = !!entry?.over && !reached;
+  const left = entry ? rules.days - entry.day : rules.days;
+  const lost = entry?.lostKg ?? 0;
+  const share = Math.min(1, lost / rules.goalKg);
+
+  const stamp = !entry ? 'LOCKED' : claim?.status === 'paid' ? 'PAID' : reached ? 'EARNED' : over ? 'TIME UP' : `DAY ${entry.day} / ${rules.days}`;
+  const status = !entry ? `Win ${rules.prize}` : reached ? 'Goal reached' : over ? 'Time up' : left === 0 ? 'Last day' : `${left} ${left === 1 ? 'day' : 'days'} left`;
+  const finishers =
+    totals.completed === 0 ? 'Nobody has finished it yet. Be the first.' : `${totals.completed} ${totals.completed === 1 ? 'member has' : 'members have'} completed the challenge so far.`;
 
   return (
-    <View className="mx-5 mb-6" style={{ paddingTop: POP }}>
-      <View
-        onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-        style={path ? null : { backgroundColor: STUB, borderRadius: RADIUS, overflow: 'hidden' }}>
-        {size && path ? (
-          <Svg width={size.w} height={size.h} style={{ position: 'absolute' }} pointerEvents="none">
-            <Defs>
-              <ClipPath id="offerTop">
-                <Path d={path} />
-              </ClipPath>
-              <ClipPath id="offerGold">
-                <Rect x={0} y={0} width={size.w} height={cut} />
-              </ClipPath>
-              <LinearGradient id="offerShine" x1="0" y1="0" x2="1" y2="1">
-                <Stop offset="0" stopColor="#ffdc7a" />
-                <Stop offset="1" stopColor="#f0b02c" />
-              </LinearGradient>
-            </Defs>
-            <Path d={path} fill={STUB} />
-            <G clipPath="url(#offerTop)">
-              <G clipPath="url(#offerGold)">
-                <Rect x={0} y={0} width={size.w} height={cut} fill="url(#offerShine)" />
-                {[40, 80, 120, 160].map((r, i) => (
-                  <Circle key={r} cx={size.w - 80} cy={cut * 0.5} r={r} fill="none" stroke={i % 2 === 0 ? 'rgba(5,10,7,0.07)' : 'rgba(255,255,255,0.22)'} strokeWidth={26} />
-                ))}
-                <Path d={sparkle(size.w - 158, 44, 7)} fill={INK} />
-                <Path d={sparkle(size.w - 22, 112, 5)} fill="#ffffff" />
-                <Path d={sparkle(size.w - 146, cut - 46, 4)} fill="#ffffff" />
-              </G>
-            </G>
-            <Path d={path} fill="none" stroke="rgba(245,196,81,0.55)" strokeWidth={1.5} />
-            {/* the tear line */}
-            <Line x1={BITE + 8} y1={cut} x2={size.w - BITE - 8} y2={cut} stroke="rgba(5,10,7,0.55)" strokeWidth={2} strokeDasharray="2 7" strokeLinecap="round" />
-          </Svg>
-        ) : null}
+    <View className="mx-5 mb-6" style={{ paddingTop: 8 }}>
+      <ChallengeTitle status={status} hot={!!entry && !over} />
+      <DisplayText {...COMPACT_TEXT} accessibilityRole="header" style={{ color: '#ffffff', fontSize: 31, lineHeight: 37, letterSpacing: -0.8, marginTop: 18 }}>
+        {reached ? 'You earned it.\nGo and claim it.' : 'This cheque has\nyour name on it.'}
+      </DisplayText>
+      <Text {...COMPACT_TEXT} style={{ color: MUTED, fontSize: 14, lineHeight: 20, marginTop: 6 }}>
+        Lose{' '}
+        <Text className="font-bold text-white">
+          {rules.goalKg} kg in {rules.days} days
+        </Text>{' '}
+        and it is yours.
+      </Text>
 
-        {/* The offer */}
-        <View
-          accessible
-          accessibilityRole="header"
-          accessibilityLabel={`${o.tag}. ${o.lead} ${o.prize}. ${o.line}`}
-          onLayout={(e) => setCut(Math.round(e.nativeEvent.layout.height))}
-          style={{ padding: 22, paddingBottom: 24, backgroundColor: path ? 'transparent' : GOLD }}>
-          <View style={{ width: '60%' }}>
-            <View className="self-start rounded-full" style={{ paddingHorizontal: 11, paddingVertical: 5, backgroundColor: INK }}>
-              <Text {...COMPACT_TEXT} className="font-black uppercase" style={{ color: GOLD, fontSize: 10.5, letterSpacing: 1.5 }}>
-                {o.tag}
+      <Cheque payee={user.name} date={entry ? shortDate(entry.endsOn, format.locale) : null} stamp={stamp} stampColor={reached ? STAMP_GREEN : STAMP_RED} />
+
+      {error ? (
+        <Text {...COMPACT_TEXT} accessibilityRole="alert" className="mb-3 text-center text-sm font-semibold" style={{ color: '#ff7a7a' }}>
+          {error}
+        </Text>
+      ) : null}
+
+      {!entry || over ? (
+        <>
+          {over ? (
+            <Text {...COMPACT_TEXT} className="mb-3 text-center font-semibold" style={{ color: MUTED, fontSize: 13 }}>
+              Your {rules.days} days ended with {fmtKg(lost)} down. You can go again.
+            </Text>
+          ) : null}
+          {profile ? (
+            // Sliding the whole way is the "are you sure": no second question (a new try after time ran out asks once).
+            <SlideToStart key={`${entry?.id ?? 'first'}-${attempt}`} onComplete={over ? () => setAsking(true) : begin} />
+          ) : (
+            <Pressable onPress={() => router.push('/complete-profile' as never)} accessibilityRole="button" className="items-center justify-center rounded-full active:opacity-80" style={{ minHeight: 56, backgroundColor: BRAND }}>
+              <Text {...COMPACT_TEXT} className="font-black" style={{ color: INK, fontSize: 16 }}>
+                Complete your profile to start
+              </Text>
+            </Pressable>
+          )}
+          <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 10 }}>
+            {finishers}
+          </Text>
+        </>
+      ) : (
+        <>
+          <View
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel={`${fmtKg(lost)} lost of ${rules.goalKg} kilograms. ${reached ? 'Goal reached' : `${left} days left`}`}
+            accessibilityValue={{ min: 0, max: 100, now: Math.round(share * 100) }}>
+            <View className="flex-row items-baseline justify-between">
+              <Text {...COMPACT_TEXT}>
+                <DisplayText {...COMPACT_TEXT} style={{ color: GOLD, fontSize: 24, lineHeight: 30 }}>
+                  {fmtKg(lost)}
+                </DisplayText>
+                <Text className="font-bold text-white" style={{ fontSize: 14 }}>
+                  {'  '}down
+                </Text>
+              </Text>
+              <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: reached ? GOLD : MUTED, fontSize: 13 }}>
+                {reached ? 'Goal reached' : `${fmtKg(Math.max(0, rules.goalKg - lost))} to go · ${left === 0 ? 'last day' : `${left} ${left === 1 ? 'day' : 'days'} left`}`}
               </Text>
             </View>
-            <Text {...COMPACT_TEXT} className="font-extrabold uppercase" style={{ color: 'rgba(5,10,7,0.72)', fontSize: 13, letterSpacing: 1.4, marginTop: 14 }}>
-              {o.lead}
-            </Text>
+            <View className="overflow-hidden" style={{ height: 8, borderRadius: 4, marginTop: 8, backgroundColor: 'rgba(255,255,255,0.1)' }}>
+              <View style={{ height: 8, borderRadius: 4, width: `${share * 100}%`, backgroundColor: GOLD }} />
+            </View>
           </View>
-          <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit style={{ color: INK, fontSize: 52, lineHeight: 58, letterSpacing: -1.5, width: '62%' }}>
-            {o.prize}
-          </DisplayText>
-          <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: 'rgba(5,10,7,0.78)', fontSize: 13.5, lineHeight: 19, marginTop: 4, width: '62%' }}>
-            {o.line}
-          </Text>
-        </View>
 
-        {/* The member's own way there */}
-        <View style={{ paddingHorizontal: 22, paddingTop: 20, paddingBottom: 20 }}>
-          {lost == null ? (
-            <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
-              Your progress will show here once your profile is complete.
+          <ChatButton label="Message your dietitian" onPress={toChat} />
+          {reached ? <ClaimButton status={claim?.status ?? null} onPress={() => router.push('/claim-prize' as never)} /> : null}
+
+          {reached ? (
+            <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 12 }}>
+              {finishers}
             </Text>
           ) : (
-            <View
-              accessible
-              accessibilityRole="progressbar"
-              accessibilityLabel={reached ? `You have lost ${fmtKg(lost)}. Goal reached.` : `You have lost ${fmtKg(lost)} of ${o.goalKg} kilograms`}
-              accessibilityValue={{ min: 0, max: 100, now: Math.round(share * 100) }}>
-              <View className="flex-row items-baseline justify-between">
-                <Text {...COMPACT_TEXT}>
-                  <DisplayText {...COMPACT_TEXT} style={{ color: GOLD, fontSize: 26, lineHeight: 32 }}>
-                    {fmtKg(lost)}
-                  </DisplayText>
-                  <Text className="font-bold text-white" style={{ fontSize: 14 }}>
-                    {'  '}down
-                  </Text>
-                </Text>
-                <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: reached ? GOLD : MUTED, fontSize: 13 }}>
-                  {reached ? 'Goal reached' : `${fmtKg(o.goalKg - lost)} to go`}
-                </Text>
-              </View>
-              <LossTrack share={share} />
-              <View className="flex-row justify-between" style={{ marginTop: 3 }}>
-                <Text {...COMPACT_TEXT} className="font-bold" style={{ color: MUTED, fontSize: 11 }}>
-                  START
-                </Text>
-                <Text {...COMPACT_TEXT} className="font-bold" style={{ color: MUTED, fontSize: 11 }}>
-                  −{o.goalKg} KG
-                </Text>
-              </View>
-            </View>
+            <Pressable
+              onPress={() => router.navigate({ pathname: '/profile', params: { log: 'weight' } } as never)}
+              accessibilityRole="link"
+              accessibilityLabel="Log your weight in Profile to move the bar"
+              accessibilityHint="Opens Profile with the weight box ready"
+              hitSlop={6}
+              className="items-center justify-center active:opacity-60"
+              style={{ minHeight: 44, marginTop: 2 }}>
+              <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12.5 }}>
+                <Text style={{ color: BRAND, fontWeight: '700', textDecorationLine: 'underline' }}>Log your weight in Profile</Text> to move the bar.
+              </Text>
+            </Pressable>
           )}
+        </>
+      )}
 
-          <Pressable
-            onPress={() => router.navigate('/diet')}
-            accessibilityRole="button"
-            accessibilityLabel={reached ? 'Tell your dietitian you reached the goal' : o.action}
-            className="flex-row items-center justify-center rounded-full active:opacity-80"
-            style={{ gap: 8, minHeight: 50, marginTop: 16, backgroundColor: GOLD }}>
-            <Text {...COMPACT_TEXT} className="font-black" style={{ color: INK, fontSize: 15.5 }}>
-              {reached ? 'Tell your dietitian' : o.action}
-            </Text>
-            <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={INK} size={15} />
-          </Pressable>
-          {lost == null ? null : (
-            <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 10 }}>
-              Counted from the start weight in your profile.
-            </Text>
-          )}
-        </View>
-      </View>
-
-      <Trophy />
+      <ConfirmSheet
+        visible={asking}
+        title={`Start a new ${rules.days} days?`}
+        message={`Today becomes day 1 and your weight now${profile ? ` (${fmtKg(profile.weightKg)})` : ''} is your new starting point.`}
+        confirmLabel="Start"
+        onConfirm={begin}
+        onCancel={() => {
+          setAsking(false);
+          setAttempt((n) => n + 1);
+        }}
+      />
     </View>
   );
 }

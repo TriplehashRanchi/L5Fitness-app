@@ -8,9 +8,10 @@ import Svg, { Circle } from 'react-native-svg';
 
 import { DisplayText } from '@/components/display-text';
 import { useDeviceClock } from '@/hooks/use-device-clock';
-import { HISTORY_DAYS, useStepHistory, type StepDay } from '@/hooks/use-step-history';
+import { useStepHistory, type StepDay } from '@/hooks/use-step-history';
 import { dayLabel, getZonedParts, toDayKey } from '@/lib/datetime';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
+import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -39,8 +40,8 @@ const TIER_GLOW: Partial<Record<Tier, string>> = { hot: '0 0 10px 2px rgba(255,9
 /** "8.4k" for the chart's target label. */
 const short = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
 
-/** The day's steps inside a thin ring that fills toward the target. */
-function StepsRing({ steps, goal, locale }: { steps: number | null; goal: number; locale: string }) {
+/** The day's steps inside a thin ring that fills toward the target, with the energy that walking used right under them. */
+function StepsRing({ steps, goal, kcal, locale }: { steps: number | null; goal: number; kcal: number | null; locale: string }) {
   const r = (RING - RING_STROKE) / 2;
   const length = 2 * Math.PI * r;
   const ratio = steps == null ? 0 : Math.min(1, steps / Math.max(1, goal));
@@ -50,7 +51,7 @@ function StepsRing({ steps, goal, locale }: { steps: number | null; goal: number
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={steps == null ? 'No steps for this day' : `${steps.toLocaleString(locale)} of ${goal.toLocaleString(locale)} steps`}
+      accessibilityLabel={steps == null ? 'No steps for this day' : `${steps.toLocaleString(locale)} of ${goal.toLocaleString(locale)} steps${kcal != null ? `, about ${kcal.toLocaleString(locale)} kilocalories` : ''}`}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}
       style={{ width: RING, height: RING, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={RING} height={RING} style={{ position: 'absolute' }}>
@@ -79,6 +80,14 @@ function StepsRing({ steps, goal, locale }: { steps: number | null; goal: number
       <Text {...COMPACT_TEXT} className="mt-0.5 text-xs font-semibold text-muted">
         of {goal.toLocaleString(locale)} steps
       </Text>
+      {kcal != null ? (
+        <View className="flex-row items-center" style={{ gap: 5, marginTop: 10 }}>
+          <SymbolView name={{ ios: 'flame.fill', android: 'local_fire_department', web: 'local_fire_department' }} tintColor="#fb923c" size={15} />
+          <Text {...COMPACT_TEXT} className="text-[15px] font-bold text-white">
+            {kcal.toLocaleString(locale)} <Text className="text-xs font-semibold text-muted">kcal</Text>
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -101,8 +110,6 @@ function MonthChart({
 }) {
   const top = Math.max(goal, ...days.map((d) => d.steps ?? 0), 1) * 1.08;
   const goalY = CHART_HEIGHT - (goal / top) * CHART_HEIGHT;
-  // A date under every 7th bar, counted back from today, keeps the axis quiet.
-  const ticks = days.map((d, i) => ((days.length - 1 - i) % 7 === 0 ? d : null));
   return (
     <View>
       <View style={{ height: CHART_HEIGHT }}>
@@ -138,17 +145,6 @@ function MonthChart({
           })}
         </View>
       </View>
-      <View className="mt-2 flex-row" style={{ gap: 3 }}>
-        {ticks.map((d, i) => (
-          <View key={days[i].key} className="flex-1 items-center" style={{ overflow: 'visible' }}>
-            {d ? (
-              <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[10px] font-semibold text-muted" style={{ width: 34, textAlign: 'center' }}>
-                {d.key === todayKey ? 'Today' : `${d.day.day}/${d.day.month}`}
-              </Text>
-            ) : null}
-          </View>
-        ))}
-      </View>
       <View className="mt-4 flex-row flex-wrap items-center justify-center" style={{ gap: 14 }}>
         {(
           [
@@ -183,6 +179,10 @@ export default function StepsScreen() {
   const [showAll, setShowAll] = useState(false);
   const selected = picked && days?.some((d) => d.key === picked) ? picked : todayKey;
   const fmt = (n: number) => n.toLocaleString(format.locale);
+  // Energy used by walking, the same sum Home uses: about 0.0005 kcal per step per kg of body weight
+  // (10,000 steps at 70 kg is 350 kcal). 70 kg stands in until the member has given their weight.
+  const { profile } = useProfile();
+  const kcalOf = (steps: number) => Math.round(steps * 0.0005 * (profile?.weightKg ?? 70));
 
   const known = (days ?? []).filter((d) => d.steps != null);
   const total = known.reduce((sum, d) => sum + (d.steps ?? 0), 0);
@@ -282,7 +282,7 @@ export default function StepsScreen() {
                   <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor="white" size={16} />
                 </Pressable>
               </View>
-              <StepsRing steps={shownSteps} goal={goal} locale={format.locale} />
+              <StepsRing steps={shownSteps} goal={goal} kcal={shownSteps == null ? null : kcalOf(shownSteps)} locale={format.locale} />
               {shownTier === 'goal' || shownTier === 'hot' ? (
                 <View
                   className="mt-4 flex-row items-center rounded-full"
@@ -333,8 +333,8 @@ export default function StepsScreen() {
               </View>
             ) : null}
 
-            {/* Three numbers in one quiet row */}
-            <View className="mx-5 mb-4 flex-row rounded-3xl border border-white/5 bg-card" style={{ paddingVertical: 16 }}>
+            {/* Three numbers in one quiet row: no card, just a thin line above and below */}
+            <View className="mx-5 flex-row" style={{ paddingVertical: 18, borderTopWidth: 1, borderBottomWidth: 1, borderColor: HAIRLINE }}>
               {stats.map((s, i) => (
                 <View key={s.label} className="flex-1 items-center" style={i > 0 ? { borderLeftWidth: 1, borderLeftColor: HAIRLINE } : undefined}>
                   <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-lg text-white">
@@ -347,21 +347,13 @@ export default function StepsScreen() {
               ))}
             </View>
 
-            {/* The month */}
-            <View className="mx-5 mb-4 rounded-3xl border border-white/5 bg-card" style={{ padding: 18 }}>
-              <View className="mb-5 flex-row items-end justify-between">
-                <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
-                  Last {HISTORY_DAYS} days
-                </Text>
-                <Text {...COMPACT_TEXT} className="text-xs font-semibold text-muted">
-                  {fmt(total)} steps
-                </Text>
-              </View>
+            {/* The month, one bar a day: straight on the page, with no heading and no dates under it */}
+            <View className="mx-5" style={{ paddingTop: 24, paddingBottom: 22 }}>
               <MonthChart days={days} goal={goal} selected={selected} onSelect={setPicked} locale={format.locale} todayKey={todayKey} />
             </View>
 
             {/* Day by day, newest first. A short box that scrolls on its own; "Show more" opens it fully. */}
-            <View className="mx-5 rounded-3xl border border-white/5 bg-card" style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 4 }}>
+            <View className="mx-5" style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
               <View className="mb-1 flex-row items-end justify-between">
                 <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
                   History

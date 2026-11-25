@@ -32,7 +32,7 @@ function TodaySkeleton() {
   return (
     <Animated.View style={style} accessibilityLabel="Loading today’s plan" accessibilityRole="progressbar">
       {[220, 170, 280, 160, 250].map((h, i) => (
-        <View key={i} className="mx-5 mb-4 rounded-3xl bg-card" style={{ height: h }} />
+        <View key={i} className="mx-5 mb-4 rounded-2xl" style={{ height: h * 0.5, backgroundColor: 'rgba(255,255,255,0.05)' }} />
       ))}
     </Animated.View>
   );
@@ -110,7 +110,8 @@ export default function TodayPlanScreen() {
           <TodaySkeleton />
         ) : day && counts ? (
           <>
-            <DaySummary day={day} percent={percent} locale={format.locale} />
+            {/* Straight on the page, no card behind either part (the same look as the Activity tab). */}
+            <DaySummary day={day} percent={percent} locale={format.locale} plain />
 
             <Checklist
               day={day}
@@ -124,6 +125,7 @@ export default function TodayPlanScreen() {
               lastDrinkMl={lastDrinkMl}
               onOpenSteps={() => router.push('/steps')}
               onAddPhoto={(type) => router.push({ pathname: '/add-meal', params: { type } })}
+              plain
             />
           </>
         ) : null}

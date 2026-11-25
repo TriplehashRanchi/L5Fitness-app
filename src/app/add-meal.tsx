@@ -1,9 +1,8 @@
 import { Image } from 'expo-image';
 import { DisplayText } from '@/components/display-text';
-import { GreenBackground } from '@/components/green-background';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,6 +21,7 @@ import { useDeviceClock } from '@/hooks/use-device-clock';
 import { getZonedParts, toDayKey } from '@/lib/datetime';
 import { createMeal, MEAL_LABEL, uploadPhoto, type MealType } from '@/lib/fitness-api';
 import { ApiError, messageFrom, NetworkError } from '@/lib/http';
+import { checkPendingPhoto, markCameraDone, markCameraOpening, takeRecoveredPhoto } from '@/lib/pending-photo';
 
 type ImagePickerModule = typeof import('expo-image-picker');
 
@@ -43,7 +43,18 @@ function loadPicker(): ImagePickerModule | null {
 }
 
 const BRAND = '#3ddc68';
+/** A neutral grey for buttons and the note box, where the green card colour used to be. */
+const SOFT = 'rgba(255,255,255,0.08)';
+const HAIRLINE = 'rgba(255,255,255,0.07)';
 const MUTED = '#8fa396';
+const INK = '#050a07';
+/** A small picture for each meal, so the four choices can be told apart at a glance. */
+const MEAL_ICON: Record<MealType, SymbolViewProps['name']> = {
+  breakfast: { ios: 'sunrise.fill', android: 'wb_twilight', web: 'wb_twilight' },
+  lunch: { ios: 'sun.max.fill', android: 'light_mode', web: 'light_mode' },
+  snack: { ios: 'cup.and.saucer.fill', android: 'local_cafe', web: 'local_cafe' },
+  dinner: { ios: 'moon.stars.fill', android: 'dark_mode', web: 'dark_mode' },
+};
 const TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** A sensible starting choice from the time of day. */
@@ -62,7 +73,7 @@ export default function AddMealScreen() {
   const { format } = useDeviceClock();
 
   // Opened from a meal's own tile (Today's plan), that meal is already chosen.
-  const { type, camera } = useLocalSearchParams<{ type?: string; camera?: string }>();
+  const { type } = useLocalSearchParams<{ type?: string }>();
   const [mealType, setMealType] = useState<MealType>(() =>
     TYPES.includes(type as MealType) ? (type as MealType) : guessType(new Date().getHours())
   );
@@ -71,6 +82,8 @@ export default function AddMealScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsSettings, setNeedsSettings] = useState(false);
+  /** The photo on screen was brought back after the phone had closed the app behind the camera. */
+  const [restored, setRestored] = useState(false);
   /** The photo already uploaded, so a retry after a failed save does not upload it again. */
   const uploaded = useRef<{ uri: string; id: string } | null>(null);
 
@@ -93,12 +106,24 @@ export default function AddMealScreen() {
           return;
         }
       }
-      // Quality 0.7 keeps a phone photo around 1 to 2 MB: sharp enough for a meal, quick to upload.
-      const options: import('expo-image-picker').ImagePickerOptions = { mediaTypes: ['images'], quality: 0.7, exif: false };
-      const result =
-        source === 'camera'
-          ? await ImagePicker.launchCameraAsync(options)
-          : await ImagePicker.launchImageLibraryAsync(options);
+      // From the library: quality 0.7 keeps a photo around 1 to 2 MB, sharp enough for a meal and quick to upload.
+      // From the camera: quality 1, on purpose. With anything lower the picker opens the whole picture in the
+      // phone's memory to shrink it, and a fresh full-size camera photo is big enough for Android to close the
+      // app at that moment (the member was thrown out right after taking the photo). At 1 the file is only copied.
+      const options: import('expo-image-picker').ImagePickerOptions = { mediaTypes: ['images'], quality: source === 'camera' ? 1 : 0.7, exif: false };
+      let result: import('expo-image-picker').ImagePickerResult;
+      if (source === 'camera') {
+        // A note that a photo is being taken: if the phone closes the app behind the camera, the next
+        // start finds the note and brings the photo back (see lib/pending-photo).
+        await markCameraOpening();
+        try {
+          result = await ImagePicker.launchCameraAsync(options);
+        } finally {
+          void markCameraDone();
+        }
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync(options);
+      }
       if (result.canceled) return;
       const asset = result.assets[0];
       setPhoto({ uri: asset.uri, mimeType: asset.mimeType });
@@ -107,14 +132,20 @@ export default function AddMealScreen() {
     }
   };
 
-  // Opened from Home's "Add meal" button: go straight to the camera, once. The photo comes back to this
-  // screen, where the meal is saved.
-  const openedCamera = useRef(false);
+  // The camera is never opened by itself: the member chooses "Take photo" or "Choose photo" here.
+  // One thing is checked when the screen opens: if Android closed the app while the camera was open,
+  // the photo that was taken is waiting, and it goes straight into this screen.
+  const checked = useRef(false);
   useEffect(() => {
-    if (camera !== '1' || openedCamera.current) return;
-    openedCamera.current = true;
-    void pick('camera');
-  }, [camera]);
+    if (checked.current) return;
+    checked.current = true;
+    void checkPendingPhoto().then(() => {
+      const waiting = takeRecoveredPhoto();
+      if (!waiting) return;
+      setPhoto(waiting);
+      setRestored(true);
+    });
+  }, []);
 
   const save = async () => {
     if (!canSave) return;
@@ -145,31 +176,106 @@ export default function AddMealScreen() {
     }
   };
 
+  const sourceTile = (source: 'camera' | 'library', primary: boolean) => {
+    const camera = source === 'camera';
+    return (
+      <Pressable
+        onPress={() => void pick(source)}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={camera ? 'Take a photo' : 'Choose a photo'}
+        className="flex-1 items-center justify-center active:opacity-80"
+        style={{ height: 112, borderRadius: 26, gap: 10, backgroundColor: primary ? BRAND : SOFT }}>
+        <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: primary ? 'rgba(5,10,7,0.12)' : 'rgba(255,255,255,0.08)' }}>
+          <SymbolView
+            name={camera ? { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' } : { ios: 'photo.on.rectangle', android: 'photo_library', web: 'photo_library' }}
+            tintColor={primary ? INK : '#ffffff'}
+            size={20}
+          />
+        </View>
+        <Text maxFontSizeMultiplier={1.3} className="text-sm font-bold" style={{ color: primary ? INK : '#ffffff' }}>
+          {camera ? 'Take photo' : 'Choose photo'}
+        </Text>
+      </Pressable>
+    );
+  };
+  // The camera does not exist in a browser, so there the one choice is the library.
+  const canShoot = Platform.OS !== 'web';
+
   return (
-    <View className="flex-1 bg-ink">
-      <GreenBackground />
+    // A plain black page like Steps and Today's plan: no green haze, no green cards.
+    <View className="flex-1" style={{ backgroundColor: '#000000' }}>
       <StatusBar style="light" />
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 32, width: '100%', maxWidth: 840, alignSelf: 'center' }}>
-          <View className="flex-row items-center justify-between px-5 pb-4">
-            <DisplayText className="text-2xl font-bold text-white">Add meal</DisplayText>
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 24, width: '100%', maxWidth: 560, alignSelf: 'center' }}>
+          <View className="flex-row items-center justify-between px-5">
+            <View className="flex-1">
+              <DisplayText className="text-[28px] tracking-tight text-white">Add meal</DisplayText>
+              <Text className="mt-0.5 text-sm text-muted">A photo, a note, or both.</Text>
+            </View>
             <Pressable
               onPress={() => router.back()}
               disabled={busy}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Close"
-              className="h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-70">
+              className="h-11 w-11 items-center justify-center rounded-full active:opacity-70"
+              style={{ backgroundColor: SOFT }}>
               <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor="white" size={16} />
             </Pressable>
           </View>
 
-          <Text className="mb-6 px-5 text-sm leading-5 text-muted">A photo or a quick note. Keep it simple.</Text>
+          {/* The photo: two clear choices until there is one, then the picture itself. */}
+          <View className="mt-6 px-5">
+            {photo ? (
+              <View className="overflow-hidden" style={{ borderRadius: 28 }}>
+                <Image
+                  source={{ uri: photo.uri }}
+                  style={{ width: '100%', aspectRatio: 4 / 3 }}
+                  contentFit="cover"
+                  transition={150}
+                  accessibilityLabel="Your meal photo"
+                  accessibilityIgnoresInvertColors
+                />
+                <View className="absolute flex-row" style={{ right: 12, bottom: 12, gap: 8 }}>
+                  <Pressable
+                    onPress={() => {
+                      setRestored(false);
+                      setPhoto(null);
+                    }}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change the photo"
+                    className="flex-row items-center rounded-full active:opacity-70"
+                    style={{ gap: 6, minHeight: 40, paddingHorizontal: 14, backgroundColor: 'rgba(0,0,0,0.72)' }}>
+                    <SymbolView name={{ ios: 'arrow.triangle.2.circlepath', android: 'autorenew', web: 'autorenew' }} tintColor="white" size={14} />
+                    <Text maxFontSizeMultiplier={1.3} className="text-[13px] font-bold text-white">
+                      Change
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <View className="flex-row" style={{ gap: 12 }}>
+                {canShoot ? sourceTile('camera', true) : null}
+                {sourceTile('library', !canShoot)}
+              </View>
+            )}
+            {restored && photo ? (
+              <Text accessibilityLiveRegion="polite" className="mt-3 text-[13px] leading-5 text-muted">
+                Your phone closed L5 Fitness while the camera was open. Here is the photo you took.
+              </Text>
+            ) : null}
+          </View>
 
-          {/* Meal type */}
-          <View className="flex-row flex-wrap gap-2 px-5">
+          {/* Which meal */}
+          <Text className="mb-3 mt-8 px-5 text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: 1.4 }}>
+            Which meal
+          </Text>
+          <View className="flex-row px-5" style={{ gap: 8 }}>
             {TYPES.map((type) => {
               const selected = type === mealType;
               return (
@@ -177,9 +283,12 @@ export default function AddMealScreen() {
                   key={type}
                   onPress={() => setMealType(type)}
                   accessibilityRole="button"
+                  accessibilityLabel={MEAL_LABEL[type]}
                   accessibilityState={{ selected }}
-                  className={`rounded-full px-5 py-2.5 ${selected ? 'bg-white' : 'bg-card'}`}>
-                  <Text maxFontSizeMultiplier={1.3} className={`text-sm font-semibold ${selected ? 'text-ink' : 'text-muted'}`}>
+                  className="flex-1 items-center justify-center active:opacity-80"
+                  style={{ height: 72, borderRadius: 20, gap: 6, backgroundColor: selected ? '#ffffff' : SOFT }}>
+                  <SymbolView name={MEAL_ICON[type]} tintColor={selected ? INK : MUTED} size={18} />
+                  <Text maxFontSizeMultiplier={1.2} numberOfLines={1} adjustsFontSizeToFit className="text-[12px] font-bold" style={{ color: selected ? INK : MUTED }}>
                     {MEAL_LABEL[type]}
                   </Text>
                 </Pressable>
@@ -187,64 +296,14 @@ export default function AddMealScreen() {
             })}
           </View>
 
-          {/* Photo */}
-          <View className="mt-5 px-5">
-            {photo ? (
-              <View className="overflow-hidden rounded-3xl border border-white/5 bg-card">
-                <Image
-                  source={{ uri: photo.uri }}
-                  style={{ width: '100%', aspectRatio: 4 / 3 }}
-                  contentFit="cover"
-                  accessibilityLabel="Your meal photo"
-                  accessibilityIgnoresInvertColors
-                />
-                <Pressable
-                  onPress={() => setPhoto(null)}
-                  disabled={busy}
-                  accessibilityRole="button"
-                  className="absolute right-3 top-3 flex-row items-center gap-1.5 rounded-full bg-black/70 px-3.5 py-2 active:opacity-70">
-                  <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor="white" size={14} />
-                  <Text maxFontSizeMultiplier={1.3} className="text-xs font-bold text-white">
-                    Remove
-                  </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View className="rounded-3xl border border-white/10 bg-card p-6">
-                <View className="items-center">
-                  <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} tintColor={BRAND} size={30} />
-                  <Text className="mt-3 text-base font-bold text-white">Add a photo of your meal</Text>
-                  <Text className="mt-1 text-center text-sm text-muted">Optional if you write a note.</Text>
-                </View>
-                <View className="mt-5 flex-row gap-3">
-                  {Platform.OS !== 'web' ? (
-                    <Pressable
-                      onPress={() => pick('camera')}
-                      accessibilityRole="button"
-                      className="flex-1 flex-row items-center justify-center gap-2 rounded-full bg-brand py-3 active:opacity-80">
-                      <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#050a07" size={16} />
-                      <Text maxFontSizeMultiplier={1.3} className="font-bold text-ink">
-                        Take photo
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    onPress={() => pick('library')}
-                    accessibilityRole="button"
-                    className="flex-1 flex-row items-center justify-center gap-2 rounded-full border border-white/15 py-3 active:opacity-70">
-                    <SymbolView name={{ ios: 'photo', android: 'photo_library', web: 'photo_library' }} tintColor="white" size={16} />
-                    <Text maxFontSizeMultiplier={1.3} className="font-bold text-white">
-                      Choose photo
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-          </View>
-
           {/* Note */}
-          <View className="mt-5 px-5">
-            <Text className="mb-2 text-sm font-semibold text-white">Note (optional)</Text>
+          <View className="mb-3 mt-8 flex-row items-end justify-between px-5">
+            <Text className="text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: 1.4 }}>
+              Note {photo ? '(optional)' : ''}
+            </Text>
+            <Text className="text-[11px] text-muted">{note.length}/200</Text>
+          </View>
+          <View className="px-5">
             <TextInput
               value={note}
               onChangeText={setNote}
@@ -256,14 +315,14 @@ export default function AddMealScreen() {
               multiline
               editable={!busy}
               maxFontSizeMultiplier={1.4}
-              style={{ minHeight: 72, textAlignVertical: 'top' }}
-              className="rounded-2xl border border-white/10 bg-card px-4 py-3 text-base text-white"
+              accessibilityLabel="Note"
+              style={{ minHeight: 84, textAlignVertical: 'top', backgroundColor: SOFT, borderRadius: 20 }}
+              className="px-4 py-3.5 text-base text-white"
             />
-            <Text className="mt-1 self-end text-xs text-muted">{note.length}/200</Text>
           </View>
 
           {error ? (
-            <View accessibilityRole="alert" className="mx-5 mt-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
+            <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
               <Text className="text-sm text-white">{error}</Text>
               {needsSettings ? (
                 <Pressable onPress={() => Linking.openSettings()} hitSlop={8} accessibilityRole="button">
@@ -272,26 +331,31 @@ export default function AddMealScreen() {
               ) : null}
             </View>
           ) : null}
-
-          <View className="mt-6 px-5">
-            <Pressable
-              onPress={save}
-              disabled={!canSave}
-              accessibilityRole="button"
-              className={`items-center rounded-full py-4 active:opacity-80 ${canSave ? 'bg-brand' : 'bg-card-2'}`}>
-              {busy ? (
-                <ActivityIndicator color="#050a07" />
-              ) : (
-                <Text maxFontSizeMultiplier={1.3} className={`text-base font-bold ${canSave ? 'text-ink' : 'text-muted'}`}>
-                  Save meal
-                </Text>
-              )}
-            </Pressable>
-            <Text className="mt-3 text-center text-xs" style={{ color: MUTED }}>
-              Saved to your account. You can delete it any time.
-            </Text>
-          </View>
         </ScrollView>
+
+        {/* Save stays at the bottom of the screen, above the keyboard. */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 14, borderTopWidth: 1, borderTopColor: HAIRLINE, width: '100%', maxWidth: 560, alignSelf: 'center' }}>
+          <Pressable
+            onPress={save}
+            disabled={!canSave}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canSave, busy }}
+            className="items-center justify-center rounded-full active:opacity-80"
+            style={{ minHeight: 56, backgroundColor: canSave || busy ? BRAND : SOFT }}>
+            {busy ? (
+              <View className="flex-row items-center" style={{ gap: 10 }}>
+                <ActivityIndicator color={INK} />
+                <Text maxFontSizeMultiplier={1.3} className="text-base font-bold" style={{ color: INK }}>
+                  {photo ? 'Uploading…' : 'Saving…'}
+                </Text>
+              </View>
+            ) : (
+              <Text maxFontSizeMultiplier={1.3} className="text-base font-bold" style={{ color: canSave ? INK : MUTED }}>
+                {canSave ? 'Save meal' : 'Add a photo or a note'}
+              </Text>
+            )}
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </View>
   );

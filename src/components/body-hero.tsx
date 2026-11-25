@@ -349,10 +349,11 @@ export function BodyHero({
     for (const m of meals ?? []) if (!fromPlan[m.mealType]) total += TYPICAL_KCAL[m.mealType] ?? 0;
     return total;
   }, [items, meals]);
-  // Burned: walking (about 0.0005 kcal per step per kg, so 10,000 steps at 70 kg is 350 kcal) plus today's workouts.
+  // Walking: about 0.0005 kcal per step per kg, so 10,000 steps at 70 kg is 350 kcal.
   const fromSteps = (steps ?? 0) * 0.0005 * (profile?.weightKg ?? 70);
-  const fromWorkouts = data?.stats.calories ?? 0;
-  const burned = fromSteps + fromWorkouts;
+  const burned = fromSteps;
+  // One figure for the day: meals and steps added together (workouts are not shown on Home).
+  const totalKcal = eaten + fromSteps;
   const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
   return (
@@ -426,14 +427,15 @@ export function BodyHero({
               color={CAL}
               icon="camera"
               label="Meal"
-              a11y="Add a meal with the camera"
-              onPress={() => router.push({ pathname: '/add-meal', params: { camera: '1' } })}
+              a11y="Add a meal"
+              // Opens the Add meal page, where the member picks: take a photo, or choose one.
+              onPress={() => router.push('/add-meal')}
             />
           </View>
         }>
-        <Figure label="Meals" value={fmt(eaten)} color={CAL} strong />
+        <Figure label="Meals" value={fmt(eaten)} color={CAL} />
         <Figure label="Steps" value={fmt(fromSteps)} color={BURN} />
-        <Figure label="Workout" value={fmt(fromWorkouts)} color={BURN} />
+        <Figure label="Total" value={fmt(totalKcal)} color="#ffffff" strong />
       </Column>
     </View>
   );

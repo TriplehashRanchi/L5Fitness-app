@@ -1,11 +1,13 @@
 import '@/global.css';
 
-import { DarkTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, Stack, ThemeProvider, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { NotificationsPanel } from '@/components/notifications-panel';
 import { SplashOverlay } from '@/components/splash-overlay';
+import { checkPendingPhoto } from '@/lib/pending-photo';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { NotificationsProvider } from '@/providers/notifications-provider';
 import { ProfileProvider, useProfile } from '@/providers/profile-provider';
@@ -43,6 +45,23 @@ function ProfileGate() {
       )}
     </View>
   );
+}
+
+/**
+ * Android can close the app while its camera is open for a meal photo. When the app starts again and
+ * such a photo is waiting, this opens Add meal again, where the photo is put in (see lib/pending-photo).
+ */
+function PendingPhoto() {
+  const router = useRouter();
+  const pathname = usePathname();
+  useEffect(() => {
+    void checkPendingPhoto().then((found) => {
+      if (found && pathname !== '/add-meal') router.push('/add-meal');
+    });
+    // Once, when the app has started.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
 }
 
 function RootNavigator() {
@@ -83,11 +102,15 @@ function RootNavigator() {
             <Stack.Screen name="complete-profile" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="chat/admin" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="ai" options={{ animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="claim-prize" options={{ animation: 'slide_from_bottom' }} />
             <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
           </Stack.Protected>
         </Stack>
       )}
       {loggedIn && status === 'ready' ? <NotificationsPanel /> : null}
+      {loggedIn && status === 'ready' ? <PendingPhoto /> : null}
       <SplashOverlay />
     </ThemeProvider>
   );
