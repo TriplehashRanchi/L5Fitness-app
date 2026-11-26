@@ -1,27 +1,28 @@
 import type { CoachingStatus, Home } from '@/lib/fitness-api';
+import type { Translate } from '@/lib/i18n';
 
 /** The text shown when there is no workout: still loading, not shared, waiting for a dietitian, or nothing planned. */
-export function emptyPlanCopy(coaching: CoachingStatus | undefined, loading: boolean) {
-  const title = loading ? 'Loading workout…' : coaching?.status === 'pending' ? 'Your next chapter.' : 'Your personal plan.';
+export function emptyPlanCopy(coaching: CoachingStatus | undefined, loading: boolean, t: Translate) {
+  const title = loading ? t('hm.planLoading') : coaching?.status === 'pending' ? t('hm.planNextChapter') : t('hm.planPersonal');
   const line = loading
     ? ' '
     : coaching?.status === 'not_shared'
-      ? 'Complete your fitness profile and enable sharing to receive personal diet and exercise plans.'
+      ? t('hm.planNotShared')
       : coaching?.status === 'pending'
-        ? 'Your coach will assign a dietitian to you soon. Your personal plans will appear here after they are added.'
-        : `${coaching?.dietitianName || 'Your dietitian'} is your dietitian. No exercise plan has been added for today yet.`;
+        ? t('hm.planPending')
+        : t('hm.planNoExercise', { name: coaching?.dietitianName || t('hm.yourDietitian') });
   return { title, line };
 }
 
 /** The headline and one-line description of today's workout, including the empty / pending / not-shared texts. */
-export function planCopy(data: Home | null, loading: boolean) {
+export function planCopy(data: Home | null, loading: boolean, t: Translate) {
   const plan = data?.plan ?? null;
-  if (!plan) return emptyPlanCopy(data?.coaching, loading);
+  if (!plan) return emptyPlanCopy(data?.coaching, loading, t);
   const line = [
-    plan.exerciseCount ? `${plan.exerciseCount} exercises` : null,
-    `${plan.durationMin} minutes`,
-    `${plan.kcal} estimated kcal`,
-    plan.focus ? `Focus: ${plan.focus}` : null,
+    plan.exerciseCount ? t('hm.planExercises', { n: plan.exerciseCount }) : null,
+    t('hm.planMinutes', { n: plan.durationMin }),
+    t('hm.planKcal', { n: plan.kcal }),
+    plan.focus ? t('hm.planFocus', { focus: plan.focus }) : null,
   ]
     .filter(Boolean)
     .join(' · ');

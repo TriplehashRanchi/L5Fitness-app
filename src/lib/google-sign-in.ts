@@ -9,6 +9,7 @@ import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { Platform } from 'react-native';
 
 import { auth, GOOGLE_WEB_CLIENT_ID } from '@/lib/firebase';
+import { tr } from '@/lib/i18n';
 
 type GoogleModule = typeof import('react-native-nitro-google-signin');
 
@@ -17,8 +18,6 @@ export type GoogleResult =
   /** The member closed the account picker. Not an error: just stay on the login screen. */
   | { type: 'cancelled' }
   | { type: 'error'; message: string };
-
-const FAILED = 'Google sign-in could not be completed. Please try again.';
 
 let google: GoogleModule | null | undefined;
 function load(): GoogleModule | null {
@@ -36,21 +35,18 @@ function load(): GoogleModule | null {
 
 export async function googleSignIn(): Promise<GoogleResult> {
   if (Platform.OS === 'web') {
-    return { type: 'error', message: 'Google sign-in is available in the L5 Fitness phone app.' };
+    return { type: 'error', message: tr('acc.googleWeb') };
   }
   const lib = load();
   if (!lib) {
-    return {
-      type: 'error',
-      message: 'Google sign-in needs the installed L5 Fitness app (it does not work in Expo Go).',
-    };
+    return { type: 'error', message: tr('acc.googleExpoGo') };
   }
 
   try {
     if (Platform.OS === 'android') await lib.GoogleOneTapSignIn.checkPlayServices();
     const response = await lib.GoogleOneTapSignIn.presentExplicitSignIn();
     if (lib.isCancelledResponse(response)) return { type: 'cancelled' };
-    if (!lib.isSuccessResponse(response) || !response.data.idToken) return { type: 'error', message: FAILED };
+    if (!lib.isSuccessResponse(response) || !response.data.idToken) return { type: 'error', message: tr('acc.googleFailed') };
 
     // Hand Google's proof of identity to Firebase, which creates or finds the member's account.
     await signInWithCredential(auth, GoogleAuthProvider.credential(response.data.idToken));
@@ -62,11 +58,14 @@ export async function googleSignIn(): Promise<GoogleResult> {
       return {
         type: 'error',
         message:
-          "Can't reach Google. Check your phone's internet connection and try again." +
+          tr('acc.googleOffline') +
+          // i18n-ignore
           (__DEV__ ? '\n\n(Developer note: the phone could not reach Firebase, not your own API.)' : ''),
       };
     console.warn('Google sign-in failed:', code || (e as Error).message);
     // Developers see the real reason; members get the plain sentence.
-    return { type: 'error', message: __DEV__ ? `${FAILED}\n\n(Developer note: ${code || (e as Error).message})` : FAILED };
+    const failed = tr('acc.googleFailed');
+    // i18n-ignore
+    return { type: 'error', message: __DEV__ ? `${failed}\n\n(Developer note: ${code || (e as Error).message})` : failed };
   }
 }

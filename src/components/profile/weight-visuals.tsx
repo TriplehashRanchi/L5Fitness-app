@@ -5,6 +5,7 @@ import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-nativ
 import { DisplayText } from '@/components/display-text';
 import { fmtKg } from '@/lib/body';
 import type { WeightEntry } from '@/lib/wellness-api';
+import { useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const MUTED = '#8fa396';
@@ -20,11 +21,12 @@ export function WeightRing({ weightKg, progress }: { weightKg: number; progress:
   const r = (size - stroke) / 2;
   const len = 2 * Math.PI * r;
   const shown = Math.min(1, Math.max(0, progress));
+  const t = useT();
   return (
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={`Current weight ${fmtKg(weightKg)}, ${Math.round(shown * 100)} percent of the way to your goal`}
+      accessibilityLabel={t('prof.ring.label', { kg: fmtKg(weightKg), percent: Math.round(shown * 100) })}
       accessibilityValue={{ min: 0, max: 100, now: Math.round(shown * 100) }}
       className="items-center justify-center"
       style={{ width: size, height: size }}>
@@ -48,7 +50,7 @@ export function WeightRing({ weightKg, progress }: { weightKg: number; progress:
         {num(weightKg)}
       </DisplayText>
       <Text {...COMPACT_TEXT} className="font-semibold text-muted" style={{ fontSize: 14 }}>
-        kg now
+        {t('prof.ring.now')}
       </Text>
     </View>
   );
@@ -70,10 +72,11 @@ function shortDay(day: string, locale: string) {
 export function WeightTrend({ history, targetKg, locale, max = 12 }: { history: WeightEntry[]; targetKg: number; locale: string; max?: number }) {
   const [width, setWidth] = useState(0);
   const entries = history.slice(0, max).reverse(); // newest first → oldest first
+  const t = useT();
   if (entries.length < 2) {
     return (
       <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
-        Log your weight a few times to see the line here.
+        {t('prof.trend.empty')}
       </Text>
     );
   }
@@ -103,7 +106,13 @@ export function WeightTrend({ history, targetKg, locale, max = 12 }: { history: 
     <View
       accessible
       accessibilityRole="image"
-      accessibilityLabel={`Weight from ${shortDay(first.day, locale)} to ${shortDay(latest.day, locale)}: ${fmtKg(first.weightKg)} to ${fmtKg(latest.weightKg)}. Target ${fmtKg(targetKg)}.`}
+      accessibilityLabel={t('prof.trend.label', {
+        from: shortDay(first.day, locale),
+        to: shortDay(latest.day, locale),
+        fromKg: fmtKg(first.weightKg),
+        toKg: fmtKg(latest.weightKg),
+        target: fmtKg(targetKg),
+      })}
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <View style={{ height: H }}>
         {width > 0 ? (
@@ -132,7 +141,7 @@ export function WeightTrend({ history, targetKg, locale, max = 12 }: { history: 
               {num(values[last])}
             </Text>
             <Text {...COMPACT_TEXT} className="absolute text-muted" style={{ fontSize: 11, left: 0, top: Math.max(0, y(targetKg) - 16) }}>
-              Target {num(targetKg)}
+              {t('prof.trend.target', { kg: num(targetKg) })}
             </Text>
           </>
         ) : null}
@@ -161,8 +170,9 @@ const BANDS = [
 /** A four-colour bar from 15 to 35 with a marker where this BMI sits. */
 export function BmiScale({ value }: { value: number }) {
   const at = Math.min(1, Math.max(0, (value - BMI_MIN) / (BMI_MAX - BMI_MIN)));
+  const t = useT();
   return (
-    <View accessible accessibilityRole="image" accessibilityLabel={`BMI ${value} on a scale from ${BMI_MIN} to ${BMI_MAX}`}>
+    <View accessible accessibilityRole="image" accessibilityLabel={t('prof.bmiScale.label', { value, min: BMI_MIN, max: BMI_MAX })}>
       <View style={{ height: 22, justifyContent: 'center' }}>
         <View className="flex-row overflow-hidden rounded-full" style={{ height: 8, gap: 3 }}>
           {BANDS.map((b) => (
@@ -184,13 +194,13 @@ export function BmiScale({ value }: { value: number }) {
         />
       </View>
       <View style={{ height: 16, marginTop: 4 }}>
-        {[18.5, 25, 30].map((t) => (
+        {[18.5, 25, 30].map((mark) => (
           <Text
-            key={t}
+            key={mark}
             {...COMPACT_TEXT}
             className="absolute text-center text-muted"
-            style={{ fontSize: 11, width: 36, marginLeft: -18, left: `${((t - BMI_MIN) / (BMI_MAX - BMI_MIN)) * 100}%` }}>
-            {t}
+            style={{ fontSize: 11, width: 36, marginLeft: -18, left: `${((mark - BMI_MIN) / (BMI_MAX - BMI_MIN)) * 100}%` }}>
+            {mark}
           </Text>
         ))}
       </View>

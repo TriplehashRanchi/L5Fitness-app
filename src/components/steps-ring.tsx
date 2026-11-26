@@ -1,5 +1,7 @@
 import { Text, View } from 'react-native';
 
+import { useLanguage } from '@/providers/language-provider';
+
 const SIZE = 216;
 const STROKE = 12;
 const SEGMENTS = 72;
@@ -8,6 +10,7 @@ const BRAND = '#3ddc68';
 
 /** Native views keep the activity ring lightweight without another graphics dependency. */
 export function StepsRing({ steps, goal, locale }: { steps: number | null; goal: number; locale: string }) {
+  const { t, language } = useLanguage();
   const progress = steps == null || goal <= 0 ? 0 : Math.min(1, Math.max(0, steps / goal));
   const filled = Math.floor(progress * SEGMENTS);
   const count = steps == null ? '–' : steps.toLocaleString(locale);
@@ -16,8 +19,8 @@ export function StepsRing({ steps, goal, locale }: { steps: number | null; goal:
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel="Steps today"
-      accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100), text: steps == null ? 'Steps not available' : `${count} of ${goal.toLocaleString(locale)} steps` }}
+      accessibilityLabel={t('act.stepsToday')}
+      accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100), text: steps == null ? t('act.stepsUnavailable') : t('act.stepsOfGoalA11y', { steps: count, goal: goal.toLocaleString(locale) }) }}
       style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
       {Array.from({ length: SEGMENTS }, (_, index) => {
         const angle = (index / SEGMENTS) * Math.PI * 2 - Math.PI / 2;
@@ -38,7 +41,7 @@ export function StepsRing({ steps, goal, locale }: { steps: number | null; goal:
         );
       })}
       <View className="items-center px-7" style={{ width: SIZE - 36 }}>
-        <Text maxFontSizeMultiplier={1.2} className="mb-1 text-xs font-semibold uppercase tracking-[2px] text-muted">Today</Text>
+        <Text maxFontSizeMultiplier={1.2} className={`mb-1 text-xs font-semibold uppercase text-muted ${language === 'en' ? 'tracking-[2px]' : ''}`}>{t('common.today')}</Text>
         <Text
           numberOfLines={1}
           adjustsFontSizeToFit
@@ -47,7 +50,7 @@ export function StepsRing({ steps, goal, locale }: { steps: number | null; goal:
           className="w-full text-center font-bold tracking-tight text-white">
           {count}
         </Text>
-        <Text maxFontSizeMultiplier={1.3} className="mt-1 text-sm text-muted">steps</Text>
+        <Text maxFontSizeMultiplier={1.3} className="mt-1 text-sm text-muted">{t('act.stepsUnit')}</Text>
       </View>
     </View>
   );

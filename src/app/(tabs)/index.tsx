@@ -16,6 +16,8 @@ import { HomeHeader } from '@/components/home-header';
 import { planCopy } from '@/lib/plan-copy';
 import { GoalsTile, StepsTile } from '@/components/home-summary-card';
 import { OfferCard } from '@/components/offer-card';
+import { OutboxBanner } from '@/components/outbox-banner';
+import { PauseBanner } from '@/components/pause-banner';
 import { PlanHeroCard } from '@/components/plan-hero-card';
 import { todayProgress } from '@/components/today-card/plan-progress';
 import { ActiveWorkoutCard } from '@/components/active-workout/active-workout-card';
@@ -46,6 +48,7 @@ import {
   type ActiveWorkout,
 } from '@/lib/storage';
 import { useAuth } from '@/providers/auth-provider';
+import { useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
 
@@ -63,6 +66,7 @@ const MAX_WORKOUT_MIN = 240;
 const minutesSince = (start: Date) => Math.round((Date.now() - start.getTime()) / 60_000);
 
 export default function HomeScreen() {
+  const t = useT();
   const { role } = useProfile();
   const insets = useSafeAreaInsets();
   const { now, format, firstWeekday } = useDeviceClock();
@@ -71,7 +75,7 @@ export default function HomeScreen() {
   const { start } = useLocalSearchParams<{ start?: string }>();
   const { session } = useAuth();
   const userId = session?.user.id;
-  const userName = session?.user.name ?? 'Athlete';
+  const userName = session?.user.name ?? t('hm.athlete');
   const { unread, openInbox } = useNotifications();
   const openCoach = () => router.push('/ai' as never);
 
@@ -91,7 +95,7 @@ export default function HomeScreen() {
     await Promise.all([refresh(), steps.reload()]);
   };
   const plan = data?.plan ?? null;
-  const { title: heroTitle } = planCopy(data, loading);
+  const { title: heroTitle } = planCopy(data, loading, t);
   const planPercent = data ? todayProgress(data, steps.todaySteps).percent : null;
   const todayIndex = week.findIndex((d) => isSameDay(d, today));
   /** Which button is waiting on the server: 'workout' or a class id. */
@@ -196,14 +200,15 @@ export default function HomeScreen() {
   // Water: the total moves at once and is then confirmed by the server's own number.
   const today_key = toDayKey(today);
   /** Resolves to an error message, or null when saved. */
-  const changeWater = async (run: () => Promise<NonNullable<typeof data>['water']>, optimisticMl: number) => {
+  const changeWater = async (run: () => Promise<NonNullable<typeof data>['water'] | null>, optimisticMl: number) => {
     setBusy('water');
     setData((prev) =>
       prev ? { ...prev, water: { ...prev.water, totalMl: Math.max(0, prev.water.totalMl + optimisticMl) } } : prev
     );
     try {
       const next = await run();
-      setData((prev) => (prev ? { ...prev, water: next } : prev));
+      // null: no signal, so it was kept on the phone to send later. What is on screen stays as it is.
+      if (next) setData((prev) => (prev ? { ...prev, water: next } : prev));
       return null;
     } catch (e) {
       // Take back the amount that was shown but not saved.
@@ -289,17 +294,44 @@ export default function HomeScreen() {
             className="mx-5 mb-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
             <Text className="text-sm font-semibold text-white">{message}</Text>
             {error && !notice ? (
-              <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text>
+              <Text className="mt-0.5 text-xs text-muted">{t('hm.pullToRetry')}</Text>
             ) : null}
             {error && !data ? (
               <Pressable
                 onPress={refresh}
                 accessibilityRole="button"
                 className="mt-3 self-start rounded-full bg-brand px-5 py-2 active:opacity-80">
-                <Text className="text-sm font-bold text-ink">Retry</Text>
+                <Text className="text-sm font-bold text-ink">{t('hm.retry')}</Text>
               </Pressable>
             ) : null}
           </View>
+        ) : null}
+
+        {/* A paused plan (illness, injury, a doctor's advice) says so first. */}
+        {data?.pause ? (
+          <PauseBanner pause={data.pause} onChanged={(next) => setData((prev) => (prev ? { ...prev, pause: next } : prev))} />
+        ) : null}
+
+        {/* Anything logged without a signal that is still waiting to be sent. */}
+        <OutboxBanner />
+
+        {/* The optional daily check-in: sleep, energy, hunger, stress. Gone once answered today. */}
+        {data && !data.checkedInToday && !data.pause ? (
+          <Pressable
+            onPress={() => router.push('/check-in' as never)}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('home.checkinTitle')} ${t('home.checkinSub')}`}
+            className="mx-5 mb-4 flex-row items-center rounded-2xl border border-white/10 px-4 active:opacity-80"
+            style={{ gap: 12, minHeight: 60, backgroundColor: 'rgba(255,255,255,0.05)' }}>
+            <View className="items-center justify-center rounded-full" style={{ width: 36, height: 36, backgroundColor: 'rgba(61,220,104,0.15)' }}>
+              <Text style={{ fontSize: 18 }}>🙂</Text>
+            </View>
+            <View className="flex-1">
+              <Text className="font-bold text-white" style={{ fontSize: 15 }}>{t('home.checkinTitle')}</Text>
+              <Text className="text-muted" style={{ fontSize: 12 }}>{t('home.checkinSub')}</Text>
+            </View>
+            <Text className="font-bold" style={{ color: BRAND, fontSize: 14 }}>{t('home.start')}</Text>
+          </Pressable>
         ) : null}
 
         <View style={{ height: 10 }} />
@@ -312,10 +344,10 @@ export default function HomeScreen() {
               : loading
                 ? ' '
                 : data?.coaching.status === 'not_shared'
-                  ? 'Turn on sharing to get plans'
+                  ? t('hm.heroShare')
                   : data?.coaching.status === 'pending'
-                    ? 'Your plan is on the way'
-                    : 'No plan added yet'
+                    ? t('hm.heroOnWay')
+                    : t('hm.heroNone')
           }
           notchX={weekOffset === 0 && todayIndex >= 0 ? (todayIndex + 0.5) / 7 : null}
           onPress={() => router.push('/today-plan' as never)}
@@ -356,7 +388,7 @@ export default function HomeScreen() {
         ) : null}
 
         {/* The challenge offer closes the page. It is for members: it sends them to their dietitian. */}
-        {role === 'member' ? <OfferCard /> : null}
+        {role === 'member' ? <OfferCard refreshKey={busy ? 'saving' : `${data?.water.totalMl}:${data?.diet?.done}`} /> : null}
 
       </ScrollView>
 

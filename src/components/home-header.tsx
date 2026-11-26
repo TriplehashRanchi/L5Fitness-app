@@ -1,4 +1,4 @@
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useEffect, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, {
@@ -16,22 +16,17 @@ import Svg, { Path } from 'react-native-svg';
 import { CoachLogo } from '@/components/coach-logo';
 import { DisplayText } from '@/components/display-text';
 import { blobPath } from '@/lib/blob-path';
-import { addDays, formatWeekday, getWeekDays, isSameDay, type CalendarDay } from '@/lib/datetime';
+import { addDays, formatWeekday, getWeekDays, greetingKey, isSameDay, type CalendarDay } from '@/lib/datetime';
+import type { Key } from '@/lib/i18n';
+import { useLanguage, useT } from '@/providers/language-provider';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 const BRAND = '#3ddc68';
 
-function greeting(hour: number) {
-  if (hour < 5) return 'Good night';
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
-
-/** "Kunal Kumar" -> "Kunal"; an email-like name keeps the part before the @. */
+/** "Kunal Kumar" -> "Kunal"; an email-like name keeps the part before the @. Empty when there is no name. */
 function firstName(name: string) {
-  return name.trim().split('@')[0].split(/\s+/)[0] || 'Athlete';
+  return name.trim().split('@')[0].split(/\s+/)[0];
 }
 
 /**
@@ -39,6 +34,7 @@ function firstName(name: string) {
  * swings every few seconds and a soft ring pulses around it.
  */
 function NotificationBell({ unread, onPress }: { unread: number; onPress: () => void }) {
+  const t = useT();
   const reduced = useReducedMotion();
   const swing = useSharedValue(0);
   const pulse = useSharedValue(0);
@@ -50,8 +46,8 @@ function NotificationBell({ unread, onPress }: { unread: number; onPress: () => 
       pulse.value = 0;
       return;
     }
-    const t = (to: number, ms: number) => withTiming(to, { duration: ms, easing: Easing.inOut(Easing.quad) });
-    swing.value = withRepeat(withSequence(t(1, 90), t(-1, 160), t(0.6, 140), t(-0.4, 120), t(0, 100), withDelay(3200, t(0, 1))), -1);
+    const to = (value: number, ms: number) => withTiming(value, { duration: ms, easing: Easing.inOut(Easing.quad) });
+    swing.value = withRepeat(withSequence(to(1, 90), to(-1, 160), to(0.6, 140), to(-0.4, 120), to(0, 100), withDelay(3200, to(0, 1))), -1);
     pulse.value = withRepeat(withSequence(withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }), withDelay(2200, withTiming(0, { duration: 1 }))), -1);
   }, [has, reduced, swing, pulse]);
 
@@ -63,7 +59,7 @@ function NotificationBell({ unread, onPress }: { unread: number; onPress: () => 
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel={has ? `Notifications, ${unread} unread` : 'Notifications'}
+      accessibilityLabel={has ? t('hm.notificationsUnread', { n: unread }) : t('hm.notifications')}
       className="items-center justify-center active:opacity-80"
       style={{ width: 46, height: 46 }}>
       {has ? (
@@ -112,6 +108,7 @@ function NotificationBell({ unread, onPress }: { unread: number; onPress: () => 
  * and the AI spark) inside a green ring that breathes slowly, so it reads as something alive you can talk to.
  */
 function CoachButton({ onPress }: { onPress: () => void }) {
+  const t = useT();
   const reduced = useReducedMotion();
   const glow = useSharedValue(0);
   useEffect(() => {
@@ -124,7 +121,7 @@ function CoachButton({ onPress }: { onPress: () => void }) {
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel="Ask L5 Coach, your AI assistant"
+      accessibilityLabel={t('hm.askCoach')}
       className="items-center justify-center active:opacity-80"
       style={{ width: 46, height: 46 }}>
       <Animated.View pointerEvents="none" style={[{ position: 'absolute', width: 44, height: 44, borderRadius: 22, top: 3, borderWidth: 2, borderColor: BRAND }, ringStyle]} />
@@ -141,12 +138,13 @@ export function monthYear(day: CalendarDay, locale: string) {
 
 /** One white peanut shape with two lobes: previous week on the left, next week on the right. */
 export function WeekArrows({ onStep }: { onStep: (step: number) => void }) {
+  const t = useT();
   const R = 22;
   const D = 46;
-  const lobes = [
-    { label: 'Previous week', step: -1, icon: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' } },
-    { label: 'Next week', step: 1, icon: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' } },
-  ] as const;
+  const lobes: readonly { label: Key; step: number; icon: SymbolViewProps['name'] }[] = [
+    { label: 'hm.prevWeek', step: -1, icon: { ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' } },
+    { label: 'hm.nextWeek', step: 1, icon: { ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' } },
+  ];
   return (
     <View style={{ width: R * 2 + D, height: R * 2 }}>
       <Svg width={R * 2 + D} height={R * 2} style={{ position: 'absolute' }} pointerEvents="none">
@@ -157,7 +155,7 @@ export function WeekArrows({ onStep }: { onStep: (step: number) => void }) {
           key={b.label}
           onPress={() => onStep(b.step)}
           accessibilityRole="button"
-          accessibilityLabel={b.label}
+          accessibilityLabel={t(b.label)}
           style={{ position: 'absolute', left: i * D + (i === 0 ? 0 : 0), top: 0, width: R * 2, height: R * 2, alignItems: 'center', justifyContent: 'center' }}
           className="active:opacity-60">
           <SymbolView name={b.icon} tintColor="#1c241f" size={22} weight="light" />
@@ -196,6 +194,8 @@ export function HomeHeader({
   /** Shown under the greeting, above the calendar. */
   hero?: ReactNode;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const days = getWeekDays(addDays(today, offset * 7), firstWeekday);
   const shownMonth = monthYear(days[3], locale);
 
@@ -204,10 +204,10 @@ export function HomeHeader({
       <View className="flex-row items-center justify-between gap-4">
         <View className="flex-1">
           <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted" numberOfLines={1}>
-            {greeting(new Date().getHours())}
+            {t(greetingKey(new Date().getHours()))}
           </Text>
           <DisplayText className="text-[32px] leading-10 tracking-tight text-white" numberOfLines={1}>
-            {firstName(userName)}
+            {firstName(userName) || t('hm.athlete')}
           </DisplayText>
         </View>
         <View className="flex-row items-center gap-2.5">
@@ -219,7 +219,7 @@ export function HomeHeader({
       {hero}
 
       <View className="mt-5 flex-row items-center justify-between">
-        <DisplayText {...COMPACT_TEXT} className="text-xl tracking-tight text-white" numberOfLines={1}>
+        <DisplayText {...COMPACT_TEXT} className={`text-xl tracking-tight text-white ${indic ? 'mr-3 flex-1' : ''}`} numberOfLines={1} adjustsFontSizeToFit={indic}>
           {shownMonth}
         </DisplayText>
         <WeekArrows onStep={(s) => onOffsetChange(offset + s)} />
@@ -232,7 +232,7 @@ export function HomeHeader({
             <View
               key={`${d.year}-${d.month}-${d.day}`}
               accessible
-              accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${isToday ? ', today' : ''}`}
+              accessibilityLabel={isToday ? t('hm.dayIsToday', { day: `${formatWeekday(d, locale, 'long')} ${d.day}` }) : `${formatWeekday(d, locale, 'long')} ${d.day}`}
               className="flex-1 items-center gap-2">
               <Text {...COMPACT_TEXT} className={`text-sm font-semibold ${isToday ? 'text-white' : 'text-muted'}`}>
                 {formatWeekday(d, locale, 'narrow')}

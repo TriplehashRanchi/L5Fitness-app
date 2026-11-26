@@ -8,7 +8,8 @@
     "scheme": "l5fitnessapp",
     "userInterfaceStyle": "dark",
     "ios": {
-      "infoPlist": {}
+      "infoPlist": {},
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
@@ -48,6 +49,7 @@
           }
         }
       ],
+      "expo-apple-authentication",
       "react-native-health-connect",
       [
         "@kingstinct/react-native-healthkit",

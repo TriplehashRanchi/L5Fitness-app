@@ -9,13 +9,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CoachLogo } from '@/components/coach-logo';
 import { DisplayText } from '@/components/display-text';
+import { EmergencySheet } from '@/components/emergency-sheet';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { askCoach, getAiStatus, type AiTurn } from '@/lib/ai-api';
 import { newMessageId } from '@/lib/chat-api';
 import { getZonedParts, toDayKey } from '@/lib/datetime';
+import { urgencyOf, type Urgency } from '@/lib/emergency';
 import { ApiError, messageFrom } from '@/lib/http';
+import type { Key, Translate } from '@/lib/i18n';
 import { acquireSocket, releaseSocket } from '@/lib/realtime';
 import { useAuth } from '@/providers/auth-provider';
+import { useLanguage, useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -62,8 +66,9 @@ function Dot({ delay }: { delay: number }) {
 
 /** Three dots, one after the other: the coach is thinking and has not written anything yet. */
 function Thinking() {
+  const t = useT();
   return (
-    <View accessible accessibilityLabel="L5 Coach is thinking" accessibilityLiveRegion="polite" className="flex-row items-center" style={{ gap: 5, height: 24 }}>
+    <View accessible accessibilityLabel={t('care.aiThinkingA11y')} accessibilityLiveRegion="polite" className="flex-row items-center" style={{ gap: 5, height: 24 }}>
       <Dot delay={0} />
       <Dot delay={160} />
       <Dot delay={320} />
@@ -128,24 +133,32 @@ function Answer({ text }: { text: string }) {
 type Idea = { icon: SymbolViewProps['name']; color: string; title: string; ask: string };
 
 /** Four things to ask, so the first tap is easy. The food one follows the time of day. */
-function ideasFor(hour: number): Idea[] {
-  const meal = hour < 11 ? 'breakfast' : hour < 16 ? 'lunch' : hour < 19 ? 'an evening snack' : 'dinner';
+function ideasFor(hour: number, t: Translate): Idea[] {
+  const meal: { title: Key; ask: Key } =
+    hour < 11
+      ? { title: 'care.aiPlanBreakfast', ask: 'care.aiAskBreakfast' }
+      : hour < 16
+        ? { title: 'care.aiPlanLunch', ask: 'care.aiAskLunch' }
+        : hour < 19
+          ? { title: 'care.aiPlanSnack', ask: 'care.aiAskSnack' }
+          : { title: 'care.aiPlanDinner', ask: 'care.aiAskDinner' };
   return [
-    { icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, color: '#fb923c', title: `Plan my ${meal.replace('an evening ', '')}`, ask: `What should I have for ${meal}?` },
-    { icon: { ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }, color: BRAND, title: '15-minute workout', ask: 'Give me a 15-minute home workout' },
-    { icon: { ios: 'chart.line.uptrend.xyaxis', android: 'trending_up', web: 'trending_up' }, color: '#38bdf8', title: 'How is my day going?', ask: 'How am I doing with my plan today?' },
-    { icon: { ios: 'moon.zzz.fill', android: 'bedtime', web: 'bedtime' }, color: '#a78bfa', title: 'I missed a workout', ask: 'I missed my workout. What now?' },
+    { icon: { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }, color: '#fb923c', title: t(meal.title), ask: t(meal.ask) },
+    { icon: { ios: 'dumbbell.fill', android: 'fitness_center', web: 'fitness_center' }, color: BRAND, title: t('care.aiWorkoutTitle'), ask: t('care.aiWorkoutAsk') },
+    { icon: { ios: 'chart.line.uptrend.xyaxis', android: 'trending_up', web: 'trending_up' }, color: '#38bdf8', title: t('care.aiDayTitle'), ask: t('care.aiDayAsk') },
+    { icon: { ios: 'moon.zzz.fill', android: 'bedtime', web: 'bedtime' }, color: '#a78bfa', title: t('care.aiMissedTitle'), ask: t('care.aiMissedAsk') },
   ];
 }
 
 /** Short things to say next, offered under the coach's latest answer. */
-const FOLLOW_UPS = ['Make it shorter', 'Give me another option', 'Explain why'];
+const FOLLOW_UPS: Key[] = ['care.aiShorter', 'care.aiAnother', 'care.aiWhy'];
 
-function greeting(hour: number) {
-  if (hour < 5) return 'Up late';
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+/** The greeting for the hour, with the person's name. */
+function greetingKey(hour: number): Key {
+  if (hour < 5) return 'care.aiHelloLate';
+  if (hour < 12) return 'care.aiHelloMorning';
+  if (hour < 17) return 'care.aiHelloAfternoon';
+  return 'care.aiHelloEvening';
 }
 
 /**
@@ -158,8 +171,9 @@ export default function CoachScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const { format } = useDeviceClock();
+  const { t, language } = useLanguage();
   const userId = session?.user.id ?? 'nobody';
-  const firstName = (session?.user.name ?? '').trim().split('@')[0].split(/\s+/)[0] || 'there';
+  const firstName = (session?.user.name ?? '').trim().split('@')[0].split(/\s+/)[0] || t('care.aiThere');
   const storeKey = `l5-coach-chat:${userId}`;
 
   /** null until the saved conversation has been read. */
@@ -170,6 +184,8 @@ export default function CoachScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  /** Set when what they wrote sounds urgent: the emergency box opens at once, before any answer. */
+  const [urgent, setUrgent] = useState<Urgency | null>(null);
   const current = useRef<string | null>(null);
   const mounted = useRef(true);
 
@@ -262,6 +278,7 @@ export default function CoachScreen() {
     const body = (value ?? text).trim();
     if (!body || busy || !messages) return;
     setText('');
+    setUrgent(urgencyOf(body));
     const history = [...messages.filter((m) => !m.state), { id: newMessageId(), role: 'user' as const, content: body }];
     void ask(history);
   };
@@ -292,7 +309,7 @@ export default function CoachScreen() {
   // Newest first: the list is drawn upside down so it starts at the bottom.
   const rows = useMemo(() => [...(messages ?? [])].reverse(), [messages]);
   const hour = new Date().getHours();
-  const ideas = useMemo(() => ideasFor(hour), [hour]);
+  const ideas = useMemo(() => ideasFor(hour, t), [hour, t]);
   const canSend = text.trim().length > 0 && !busy;
   const off = enabled === false;
   /** The newest message is a finished answer: offer what to do with it. */
@@ -310,37 +327,37 @@ export default function CoachScreen() {
       <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {/* Top bar: close on the left, who you are talking to in the middle, a new chat on the right. */}
         <View className="flex-row items-center px-4" style={{ paddingTop: insets.top + 8, paddingBottom: 10 }}>
-          {roundButton('Close', { ios: 'chevron.down', android: 'keyboard_arrow_down', web: 'keyboard_arrow_down' }, () => router.back())}
+          {roundButton(t('common.close'), { ios: 'chevron.down', android: 'keyboard_arrow_down', web: 'keyboard_arrow_down' }, () => router.back())}
           <View className="flex-1 flex-row items-center justify-center" style={{ gap: 10 }}>
             <Orb size={34} busy={busy} />
-            <View>
+            <View className="shrink">
               <Text {...COMPACT_TEXT} accessibilityRole="header" numberOfLines={1} className="text-[17px] font-bold text-white">
                 L5 Coach
               </Text>
               <View className="flex-row items-center" style={{ gap: 5 }}>
                 <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: off ? MUTED : BRAND }} />
-                <Text {...COMPACT_TEXT} numberOfLines={1} accessibilityLiveRegion="polite" className="text-[11px] font-semibold" style={{ color: busy ? BRAND : MUTED }}>
-                  {off ? 'Coming soon' : busy ? 'Thinking…' : 'Knows your plan'}
+                <Text {...COMPACT_TEXT} numberOfLines={language === 'en' ? 1 : 2} accessibilityLiveRegion="polite" className="shrink text-[11px] font-semibold" style={{ color: busy ? BRAND : MUTED }}>
+                  {off ? t('care.aiSoon') : busy ? t('care.aiThinking') : t('care.aiKnowsPlan')}
                 </Text>
               </View>
             </View>
           </View>
-          {rows.length > 0 ? roundButton('Start a new chat', { ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }, startOver, busy) : <View style={{ width: 44 }} />}
+          {rows.length > 0 ? roundButton(t('care.aiNewChat'), { ios: 'square.and.pencil', android: 'edit_square', web: 'edit_square' }, startOver, busy) : <View style={{ width: 44 }} />}
         </View>
 
         {off ? (
           // No key on the server yet: say so kindly instead of failing on the first question.
           <View className="flex-1 items-center justify-center px-10">
             <Orb size={96} />
-            <DisplayText {...COMPACT_TEXT} className="mt-7 text-center text-[26px] leading-8 tracking-tight text-white">
-              L5 Coach is almost here
+            <DisplayText {...COMPACT_TEXT} className={`mt-7 text-center text-[26px] tracking-tight text-white ${language === 'en' ? 'leading-8' : ''}`}>
+              {t('care.aiAlmost')}
             </DisplayText>
             <Text {...COMPACT_TEXT} className="mt-2 text-center text-[15px] leading-6 text-muted">
-              Your AI assistant for food, training and everything in between is being switched on. Check back soon.
+              {t('care.aiAlmostText')}
             </Text>
             <Pressable onPress={checkStatus} accessibilityRole="button" className="mt-5 min-h-11 justify-center active:opacity-60">
               <Text {...COMPACT_TEXT} className="text-sm font-bold text-brand">
-                Check again
+                {t('care.aiCheckAgain')}
               </Text>
             </Pressable>
           </View>
@@ -353,10 +370,10 @@ export default function CoachScreen() {
             <View className="items-center">
               <Orb size={104} />
               <Text {...COMPACT_TEXT} className="mt-7 text-center text-[15px] font-semibold text-muted">
-                {greeting(hour)}, {firstName}
+                {t(greetingKey(hour), { name: firstName })}
               </Text>
-              <DisplayText {...COMPACT_TEXT} className="mt-1 text-center text-[30px] leading-9 tracking-tight text-white">
-                What can I help with?
+              <DisplayText {...COMPACT_TEXT} className={`mt-1 text-center text-[30px] tracking-tight text-white ${language === 'en' ? 'leading-9' : ''}`}>
+                {t('care.aiWhatHelp')}
               </DisplayText>
             </View>
 
@@ -368,20 +385,20 @@ export default function CoachScreen() {
                   onPress={() => submit(idea.ask)}
                   disabled={messages === null}
                   accessibilityRole="button"
-                  accessibilityLabel={`Ask: ${idea.ask}`}
+                  accessibilityLabel={t('care.aiAskIdea', { text: idea.ask })}
                   className="active:opacity-70"
                   style={{ flexBasis: '47%', flexGrow: 1, minHeight: 104, borderRadius: 24, padding: 14, justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.06)' }}>
                   <View className="items-center justify-center" style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: `${idea.color}26` }}>
                     <SymbolView name={idea.icon} tintColor={idea.color} size={18} />
                   </View>
-                  <Text {...COMPACT_TEXT} numberOfLines={2} className="text-[15px] font-bold leading-5 text-white">
+                  <Text {...COMPACT_TEXT} numberOfLines={language === 'en' ? 2 : 3} className={`text-[15px] font-bold text-white ${language === 'en' ? 'leading-5' : 'leading-6'}`}>
                     {idea.title}
                   </Text>
                 </Pressable>
               ))}
             </View>
             <Text {...COMPACT_TEXT} className="mt-5 text-center text-[13px] leading-5 text-muted">
-              Or ask anything below. I answer in the language you write in.
+              {t('care.aiOrAsk')}
             </Text>
           </ScrollView>
         ) : (
@@ -397,10 +414,10 @@ export default function CoachScreen() {
             ListHeaderComponent={
               answered ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginTop: 14, marginLeft: 38 }} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
-                  {FOLLOW_UPS.map((f) => (
-                    <Pressable key={f} onPress={() => submit(f)} accessibilityRole="button" accessibilityLabel={`Say: ${f}`} className="justify-center rounded-full active:opacity-60" style={{ minHeight: 36, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
+                  {FOLLOW_UPS.map((key) => (
+                    <Pressable key={key} onPress={() => submit(t(key))} accessibilityRole="button" accessibilityLabel={t('care.aiSayIdea', { text: t(key) })} className="justify-center rounded-full active:opacity-60" style={{ minHeight: 36, paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)' }}>
                       <Text {...COMPACT_TEXT} className="text-[13px] font-semibold text-white">
-                        {f}
+                        {t(key)}
                       </Text>
                     </Pressable>
                   ))}
@@ -426,9 +443,9 @@ export default function CoachScreen() {
                       L5 Coach
                     </Text>
                     {item.state === 'failed' ? (
-                      <Pressable onPress={retry} accessibilityRole="button" accessibilityLabel="The coach could not answer. Try again" className="min-h-9 justify-center active:opacity-60">
+                      <Pressable onPress={retry} accessibilityRole="button" accessibilityLabel={t('care.aiFailedA11y')} className="min-h-9 justify-center active:opacity-60">
                         <Text {...COMPACT_TEXT} className="text-[15px] font-semibold leading-6" style={{ color: '#ff8a8a' }}>
-                          {error ?? 'The coach could not answer.'} <Text style={{ color: BRAND, fontWeight: '700' }}>Try again</Text>
+                          {error ?? t('care.aiFailed')} <Text style={{ color: BRAND, fontWeight: '700' }}>{t('common.tryAgain')}</Text>
                         </Text>
                       </Pressable>
                     ) : item.content ? (
@@ -437,11 +454,11 @@ export default function CoachScreen() {
                         <Answer text={item.state === 'writing' ? `${item.content} ▍` : item.content} />
                         {!item.state ? (
                           <View className="flex-row" style={{ gap: 4, marginTop: 8, marginLeft: -8 }}>
-                            <Pressable onPress={() => share(item.content)} hitSlop={4} accessibilityRole="button" accessibilityLabel="Share this answer" className="h-9 w-9 items-center justify-center rounded-full active:opacity-50">
+                            <Pressable onPress={() => share(item.content)} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('care.aiShare')} className="h-9 w-9 items-center justify-center rounded-full active:opacity-50">
                               <SymbolView name={{ ios: 'square.and.arrow.up', android: 'ios_share', web: 'ios_share' }} tintColor={MUTED} size={15} />
                             </Pressable>
                             {index === 0 && !busy ? (
-                              <Pressable onPress={regenerate} hitSlop={4} accessibilityRole="button" accessibilityLabel="Answer again" className="h-9 w-9 items-center justify-center rounded-full active:opacity-50">
+                              <Pressable onPress={regenerate} hitSlop={4} accessibilityRole="button" accessibilityLabel={t('care.aiAgain')} className="h-9 w-9 items-center justify-center rounded-full active:opacity-50">
                                 <SymbolView name={{ ios: 'arrow.clockwise', android: 'refresh', web: 'refresh' }} tintColor={MUTED} size={15} />
                               </Pressable>
                             ) : null}
@@ -467,8 +484,8 @@ export default function CoachScreen() {
                 onChangeText={setText}
                 multiline
                 maxLength={MAX_LENGTH}
-                accessibilityLabel="Ask L5 Coach"
-                placeholder={busy ? 'L5 Coach is answering…' : 'Ask anything'}
+                accessibilityLabel={t('care.aiAskCoach')}
+                placeholder={busy ? t('care.aiAnswering') : t('care.aiAskAnything')}
                 placeholderTextColor={MUTED}
                 selectionColor={BRAND}
                 cursorColor={BRAND}
@@ -480,7 +497,7 @@ export default function CoachScreen() {
                 onPress={() => submit()}
                 disabled={!canSend}
                 accessibilityRole="button"
-                accessibilityLabel="Send"
+                accessibilityLabel={t('care.send')}
                 accessibilityState={{ disabled: !canSend }}
                 className="items-center justify-center active:opacity-80"
                 style={{ width: 40, height: 40, borderRadius: 20, marginLeft: 8, backgroundColor: canSend ? BRAND : 'rgba(255,255,255,0.08)' }}>
@@ -489,12 +506,13 @@ export default function CoachScreen() {
             </View>
             {keyboardOpen ? null : (
               <Text {...COMPACT_TEXT} className="mt-2 text-center text-[11px] text-muted">
-                L5 Coach is an AI and can be wrong. For medical questions, ask a doctor.
+                {t('care.aiDisclaimer')}
               </Text>
             )}
           </View>
         )}
       </KeyboardAvoidingView>
+      <EmergencySheet kind={urgent} onClose={() => setUrgent(null)} />
     </View>
   );
 }

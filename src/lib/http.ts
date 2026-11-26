@@ -7,6 +7,8 @@
 
 import Constants from 'expo-constants';
 
+import { currentLanguage, tr } from '@/lib/i18n';
+
 /**
  * The API's address. Set EXPO_PUBLIC_API_URL (written exactly like this for Expo to inline it).
  *
@@ -56,6 +58,8 @@ type Options = {
   body?: unknown;
   /** How long to wait for an answer. Only the AI coach needs more than the usual 15 seconds. */
   timeoutMs?: number;
+  /** Extra headers, for example the Idempotency-Key that makes a retry safe. */
+  headers?: Record<string, string>;
 };
 type ErrorBody = { error?: { code?: string; message?: string } };
 
@@ -65,7 +69,7 @@ export async function send<T>(
   options: Options = {}
 ): Promise<{ status: number; data: (T & ErrorBody) | null }> {
   if (!API_URL) {
-    throw new NetworkError('The app is not connected to a server yet. Set EXPO_PUBLIC_API_URL.');
+    throw new NetworkError(tr('acc.notConnected'));
   }
 
   const controller = new AbortController();
@@ -74,8 +78,11 @@ export async function send<T>(
     const res = await fetch(API_URL + path, {
       method: options.method ?? 'GET',
       headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
+        // The server writes its messages in the app's language.
+        'Accept-Language': currentLanguage(), // i18n-ignore
+        ...(options.headers ?? {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}), // i18n-ignore
+        ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}), // i18n-ignore
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
@@ -92,7 +99,8 @@ export async function send<T>(
     // Developers get the real details; members get the plain sentence.
     if (__DEV__) console.warn(`[api] ${options.method ?? 'GET'} ${API_URL}${path} failed:`, (e as Error).message);
     throw new NetworkError(
-      "Can't reach the server. Check your internet connection and try again." +
+      tr('acc.noServer') +
+        // i18n-ignore
         (__DEV__ ? `\n\n(Developer note: the app tried ${API_URL}. Open that address plus /health in the phone's browser.)` : '')
     );
   } finally {
@@ -102,14 +110,17 @@ export async function send<T>(
 
 // ── Signed-in calls ──────────────────────────────────────────────────────────────────────────
 
-let tokenProvider: (() => Promise<string | null>) | null = null;
+/** `fresh` asks for a brand new token instead of the one kept on the phone. */
+type TokenProvider = (fresh?: boolean) => Promise<string | null>;
+
+let tokenProvider: TokenProvider | null = null;
 let onSessionEnded: (() => void) | null = null;
 
 /**
  * Called once by the auth provider. Returns a fresh Firebase token for the signed-in member
  * (Firebase renews it by itself when it is about to expire), or null when nobody is signed in.
  */
-export function setTokenProvider(provider: (() => Promise<string | null>) | null) {
+export function setTokenProvider(provider: TokenProvider | null) {
   tokenProvider = provider;
 }
 
@@ -121,20 +132,30 @@ export function setSessionEndedHandler(handler: (() => void) | null) {
   onSessionEnded = handler;
 }
 
-/** A call as the signed-in user. Returns the body, or throws ApiError / NetworkError. */
-export async function api<T>(path: string, options: Omit<Options, 'token'> = {}): Promise<T> {
-  let token: string | null = null;
+async function tokenFor(fresh = false) {
   try {
-    token = (await tokenProvider?.()) ?? null;
+    return (await tokenProvider?.(fresh)) ?? null;
   } catch {
     // The token could not be renewed, which in practice means there is no connection.
-    throw new NetworkError("Can't reach the server. Check your internet connection and try again.");
+    throw new NetworkError(tr('acc.noServer'));
   }
-  const { status, data } = await send<T>(path, { ...options, token });
+}
+
+/** A call as the signed-in user. Returns the body, or throws ApiError / NetworkError. */
+export async function api<T>(path: string, options: Omit<Options, 'token'> = {}): Promise<T> {
+  let token = await tokenFor();
+  let { status, data } = await send<T>(path, { ...options, token });
+  // The server refused the token. Try once more with a new one before giving up on the login.
+  // (Safe for saving requests too: a refused request was not carried out.)
+  if (status === 401 && token) {
+    token = await tokenFor(true);
+    if (token) ({ status, data } = await send<T>(path, { ...options, token }));
+  }
   if (status >= 200 && status < 300) return data as T;
-  if (status === 401) onSessionEnded?.();
+  // Only a refused token ends the session: a request sent with none says nothing about the login.
+  if (status === 401 && token) onSessionEnded?.();
   throw new ApiError(
-    data?.error?.message ?? 'Something went wrong. Please try again.',
+    data?.error?.message ?? tr('acc.wrong'),
     status,
     data?.error?.code
   );
@@ -144,5 +165,5 @@ export async function api<T>(path: string, options: Omit<Options, 'token'> = {})
 export function messageFrom(error: unknown) {
   return error instanceof ApiError || error instanceof NetworkError
     ? error.message
-    : 'Something went wrong. Please try again.';
+    : tr('acc.wrong');
 }

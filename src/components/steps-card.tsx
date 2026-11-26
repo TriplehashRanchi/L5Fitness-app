@@ -6,6 +6,7 @@ import { StepsRing } from '@/components/steps-ring';
 import type { useSteps } from '@/hooks/use-steps';
 import { formatWeekday, type CalendarDay } from '@/lib/datetime';
 import { compactSteps, goalPercent } from '@/lib/steps/summary';
+import { useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -81,6 +82,7 @@ export function StepsCard({
   /** Daily step goal from Settings */
   goal: number;
 }) {
+  const t = useT();
   const [showWeek, setShowWeek] = useState(false);
   const { status, week, todaySteps, asked, connecting, connect, openSettings, sourceName } = stepsState;
   const number = (n: number) => n.toLocaleString(locale);
@@ -95,10 +97,11 @@ export function StepsCard({
     if (!__DEV__) return null;
     return (
       <View className="mx-5 mb-5 rounded-3xl border border-white/10 bg-card p-5">
+        {/* i18n-ignore: developers only, never in a store build */}
         <Text className="text-sm font-bold text-white">Steps are off in this build</Text>
         <Text className="mt-1 text-xs text-muted">
-          Reading steps needs the installed app on a phone. It does not work in Expo Go or on web.
-          Developers only: members do not see this note.
+          {/* i18n-ignore: developers only, never in a store build */}
+          {'Reading steps needs the installed app on a phone. It does not work in Expo Go or on web. Developers only: members do not see this note.'}
         </Text>
       </View>
     );
@@ -107,9 +110,9 @@ export function StepsCard({
   if (status === 'needs-setup') {
     return (
       <ConnectPrompt
-        title="Count your steps"
-        detail="Install or update Health Connect, then come back here."
-        action={{ title: 'Set up', onPress: openSettings }}
+        title={t('act.countSteps')}
+        detail={t('act.installHealthConnect')}
+        action={{ title: t('act.setUp'), onPress: openSettings }}
       />
     );
   }
@@ -118,16 +121,12 @@ export function StepsCard({
     // Asked once and still not allowed: the system will not ask again, so point to settings.
     return (
       <ConnectPrompt
-        title="Count your steps"
-        detail={
-          asked
-            ? `Allow Steps for L5 Fitness in ${sourceName}.`
-            : `Connect ${sourceName} to see your daily steps.`
-        }
+        title={t('act.countSteps')}
+        detail={t(asked ? 'act.allowSteps' : 'act.connectToSee', { source: sourceName })}
         action={
           asked
-            ? { title: 'Open settings', onPress: openSettings }
-            : { title: 'Connect', onPress: connect, busy: connecting }
+            ? { title: t('act.openSettings'), onPress: openSettings }
+            : { title: t('act.connect'), onPress: connect, busy: connecting }
         }
       />
     );
@@ -143,11 +142,11 @@ export function StepsCard({
       <View className="flex-row items-center justify-between gap-3">
         <View className="flex-row items-center gap-2">
           <WalkIcon size={18} />
-          <Text {...COMPACT_TEXT} className="text-base font-semibold text-white">Your steps</Text>
+          <Text {...COMPACT_TEXT} className="text-base font-semibold text-white">{t('act.yourSteps')}</Text>
         </View>
-        <View className={`rounded-full px-3 py-1.5 ${goalMet && todaySteps != null ? 'bg-brand/10' : 'bg-card-2'}`}>
+        <View className={`shrink rounded-full px-3 py-1.5 ${goalMet && todaySteps != null ? 'bg-brand/10' : 'bg-card-2'}`}>
           <Text {...COMPACT_TEXT} className="text-xs font-semibold text-brand">
-            {todaySteps == null ? 'Waiting for data' : goalMet ? 'Goal reached ✓' : `${percent}% of goal`}
+            {todaySteps == null ? t('act.waitingData') : goalMet ? t('act.goalReachedTick') : t('act.percentOfGoal', { n: percent })}
           </Text>
         </View>
       </View>
@@ -159,22 +158,20 @@ export function StepsCard({
       <View className="flex-row rounded-2xl bg-card-2 py-4">
         <View className="flex-1 items-center border-r border-white/10 px-2">
           <Text {...COMPACT_TEXT} className="text-lg font-semibold text-white">{number(goal)}</Text>
-          <Text {...COMPACT_TEXT} className="mt-1 text-xs text-muted">Daily goal</Text>
+          <Text {...COMPACT_TEXT} className="mt-1 text-center text-xs text-muted">{t('act.dailyGoal')}</Text>
         </View>
         <View className="flex-1 items-center px-2">
           <Text {...COMPACT_TEXT} className="text-lg font-semibold text-brand">
             {todaySteps == null ? '–' : number(goalMet ? steps - goal : remaining)}
           </Text>
-          <Text {...COMPACT_TEXT} className="mt-1 text-xs text-muted">{goalMet && todaySteps != null ? 'Extra steps' : 'Steps to go'}</Text>
+          <Text {...COMPACT_TEXT} className="mt-1 text-center text-xs text-muted">{t(goalMet && todaySteps != null ? 'act.extraSteps' : 'act.stepsToGo')}</Text>
         </View>
       </View>
       {todaySteps != null ? (
         <Text {...COMPACT_TEXT} className="mt-4 text-center text-xs leading-5 text-muted">
           {goalMet
-            ? 'Daily goal complete. Every extra step counts.'
-            : steps === 0 && Platform.OS === 'ios'
-              ? 'Take a walk to get started. If steps stay at 0, check Steps access in Apple Health.'
-              : 'A little more movement, one step at a time.'}
+            ? t('act.goalComplete')
+            : t(steps === 0 && Platform.OS === 'ios' ? 'act.takeWalkIos' : 'act.littleMore')}
         </Text>
       ) : null}
 
@@ -182,11 +179,11 @@ export function StepsCard({
         onPress={() => setShowWeek((value) => !value)}
         accessibilityRole="button"
         accessibilityState={{ expanded: showWeek }}
-        accessibilityLabel={showWeek ? 'Hide weekly steps' : 'Show weekly steps'}
+        accessibilityLabel={t(showWeek ? 'act.hideWeekly' : 'act.showWeekly')}
         className="mt-4 flex-row items-center justify-between border-t border-white/5 pt-4">
-        <Text {...COMPACT_TEXT} className="text-sm font-semibold text-white">Weekly activity</Text>
+        <Text {...COMPACT_TEXT} className="shrink text-sm font-semibold text-white">{t('act.weeklyActivity')}</Text>
         <View className="flex-row items-center gap-2">
-          <Text {...COMPACT_TEXT} className="text-xs text-muted">{number(week.total)} steps</Text>
+          <Text {...COMPACT_TEXT} className="text-xs text-muted">{t('act.stepsCount', { n: number(week.total) })}</Text>
           <SymbolView name={showWeek ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor="#8fa396" size={14} />
         </View>
       </Pressable>
@@ -208,7 +205,7 @@ export function StepsCard({
               key={bar.key}
               accessible
               accessibilityLabel={
-                bar.steps == null ? `${label}, no steps yet` : `${label}, ${number(bar.steps)} steps`
+                bar.steps == null ? t('act.barNoSteps', { day: label }) : t('act.dayStepsA11y', { day: label, steps: number(bar.steps) })
               }
               className="flex-1 items-center justify-end gap-1.5">
               <Text
@@ -228,6 +225,7 @@ export function StepsCard({
               <Text
                 {...COMPACT_TEXT}
                 numberOfLines={1}
+                adjustsFontSizeToFit
                 className={`text-[11px] ${bar.isToday ? 'font-bold text-white' : 'text-muted'}`}>
                 {label}
               </Text>
@@ -239,7 +237,7 @@ export function StepsCard({
       <View className="mt-4 flex-row justify-between rounded-2xl bg-card-2 px-4 py-3">
         <View>
           <Text {...COMPACT_TEXT} className="text-[11px] text-muted">
-            Daily average
+            {t('act.dailyAverage')}
           </Text>
           <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
             {number(week.average)}
@@ -247,10 +245,10 @@ export function StepsCard({
         </View>
         <View className="items-end">
           <Text {...COMPACT_TEXT} className="text-[11px] text-muted">
-            Goal reached
+            {t('act.goalReached')}
           </Text>
           <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
-            {week.daysReachedGoal} of {week.daysCounted} {week.daysCounted === 1 ? 'day' : 'days'}
+            {t(week.daysCounted === 1 ? 'act.reachedOfOne' : 'act.reachedOfMany', { done: week.daysReachedGoal, total: week.daysCounted })}
           </Text>
         </View>
       </View>

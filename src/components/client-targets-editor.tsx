@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 
 import { messageFrom } from '@/lib/http';
+import type { Key as TextKey } from '@/lib/i18n';
 import { getClientTargets, saveClientTargets, type ClientTargets } from '@/lib/wellness-api';
+import { useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
 type Key = keyof ClientTargets;
-const FIELDS: { key: Key; label: string; unit: string; min: number; max: number }[] = [
-  { key: 'waterMl', label: 'Water', unit: 'ml / day', min: 500, max: 10000 },
-  { key: 'steps', label: 'Steps', unit: 'steps / day', min: 1000, max: 100000 },
-  { key: 'calories', label: 'Calories', unit: 'kcal / day', min: 800, max: 6000 },
-  { key: 'proteinG', label: 'Protein', unit: 'g / day', min: 0, max: 500 },
-  { key: 'weeklyWorkouts', label: 'Workouts', unit: 'per week', min: 1, max: 7 },
+const FIELDS: { key: Key; labelKey: TextKey; unitKey: TextKey; min: number; max: number }[] = [
+  { key: 'waterMl', labelKey: 'care.targetWater', unitKey: 'care.unitMlDay', min: 500, max: 10000 },
+  { key: 'steps', labelKey: 'care.metricSteps', unitKey: 'care.unitStepsDay', min: 1000, max: 100000 },
+  { key: 'calories', labelKey: 'care.targetCalories', unitKey: 'care.unitKcalDay', min: 800, max: 6000 },
+  { key: 'proteinG', labelKey: 'care.targetProtein', unitKey: 'care.unitGramDay', min: 0, max: 500 },
+  { key: 'weeklyWorkouts', labelKey: 'care.targetWorkouts', unitKey: 'care.unitPerWeek', min: 1, max: 7 },
 ];
 
 const toText = (t: ClientTargets): Record<Key, string> => ({
@@ -26,6 +28,7 @@ const toText = (t: ClientTargets): Record<Key, string> => ({
 
 /** A dietitian sets (or clears) a client's daily targets. An empty field means "not set". */
 export function ClientTargetsEditor({ memberId }: { memberId: string }) {
+  const t = useT();
   const [values, setValues] = useState<Record<Key, string> | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
@@ -51,7 +54,7 @@ export function ClientTargetsEditor({ memberId }: { memberId: string }) {
       }
       const n = Number(raw);
       if (!Number.isInteger(n) || n < f.min || n > f.max) {
-        return setMessage({ kind: 'error', text: `${f.label} must be a whole number from ${f.min} to ${f.max}, or empty.` });
+        return setMessage({ kind: 'error', text: t('care.targetRange', { field: t(f.labelKey), min: f.min, max: f.max }) });
       }
       targets[f.key] = n;
     }
@@ -60,7 +63,7 @@ export function ClientTargetsEditor({ memberId }: { memberId: string }) {
     try {
       const saved = await saveClientTargets(memberId, targets);
       setValues(toText(saved.targets ?? targets));
-      setMessage({ kind: 'ok', text: 'Targets saved. Your client will see them as set by you.' });
+      setMessage({ kind: 'ok', text: t('care.targetsSaved') });
     } catch (e) {
       setMessage({ kind: 'error', text: messageFrom(e) });
     } finally {
@@ -70,32 +73,32 @@ export function ClientTargetsEditor({ memberId }: { memberId: string }) {
 
   return (
     <View className="mx-5 mt-5 rounded-3xl border border-white/5 bg-card p-5">
-      <Text className="text-base font-bold text-white">Daily targets</Text>
+      <Text className="text-base font-bold text-white">{t('care.targetsTitle')}</Text>
       <Text {...COMPACT_TEXT} className="mt-1 text-xs text-muted">
-        Leave a field empty to let your client choose it themselves.
+        {t('care.targetsHint')}
       </Text>
       {values ? (
         <View className="mt-4 gap-3">
           {FIELDS.map((f) => (
             <View key={f.key} className="flex-row items-center gap-3">
               <Text {...COMPACT_TEXT} className="w-24 text-sm font-semibold text-white">
-                {f.label}
+                {t(f.labelKey)}
               </Text>
               <TextInput
                 value={values[f.key]}
-                onChangeText={(t) => setValues((v) => (v ? { ...v, [f.key]: t.replace(/\D/g, '') } : v))}
+                onChangeText={(typed) => setValues((v) => (v ? { ...v, [f.key]: typed.replace(/\D/g, '') } : v))}
                 keyboardType="number-pad"
                 maxLength={6}
-                placeholder="Not set"
+                placeholder={t('care.targetNotSet')}
                 placeholderTextColor="#6f8577"
                 selectionColor={BRAND}
                 cursorColor={BRAND}
-                accessibilityLabel={`${f.label} target, ${f.unit}`}
+                accessibilityLabel={t('care.targetFieldLabel', { field: t(f.labelKey), unit: t(f.unitKey) })}
                 style={{ minHeight: 44 }}
                 className="flex-1 rounded-2xl border border-white/10 bg-card-2 px-4 text-base text-white"
               />
               <Text {...COMPACT_TEXT} className="w-20 text-xs text-muted">
-                {f.unit}
+                {t(f.unitKey)}
               </Text>
             </View>
           ))}
@@ -118,7 +121,7 @@ export function ClientTargetsEditor({ memberId }: { memberId: string }) {
           disabled={busy}
           accessibilityRole="button"
           className="mt-4 items-center rounded-full bg-brand py-3 active:opacity-80">
-          {busy ? <ActivityIndicator color="#050a07" /> : <Text className="font-bold text-ink">Save targets</Text>}
+          {busy ? <ActivityIndicator color="#050a07" /> : <Text className="font-bold text-ink">{t('care.targetsSave')}</Text>}
         </Pressable>
       ) : null}
     </View>

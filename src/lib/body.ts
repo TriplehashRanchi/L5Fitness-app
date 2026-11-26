@@ -1,28 +1,30 @@
 /** Body measurements and goal progress. Pure functions, no phone APIs. */
+import type { Key, Translate } from '@/lib/i18n';
 
 export type Goal = 'lose' | 'maintain' | 'gain';
 export type Sex = 'female' | 'male' | 'other';
 export type Activity = 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active';
 export type DietType = 'vegetarian' | 'non_vegetarian' | 'eggetarian' | 'vegan';
 
-export const GOAL_LABEL: Record<Goal, string> = {
-  lose: 'Lose weight',
-  maintain: 'Stay at my weight',
-  gain: 'Gain weight',
+/** The words for each answer: show them with `t(GOAL_KEY[goal])`. */
+export const GOAL_KEY: Record<Goal, Key> = {
+  lose: 'goal.lose',
+  maintain: 'prof.goal.maintain',
+  gain: 'goal.gain',
 };
-export const SEX_LABEL: Record<Sex, string> = { female: 'Female', male: 'Male', other: 'Other' };
-export const DIET_LABEL: Record<DietType, string> = {
-  vegetarian: 'Vegetarian',
-  non_vegetarian: 'Non-vegetarian',
-  eggetarian: 'Eggetarian',
-  vegan: 'Vegan',
+export const SEX_KEY: Record<Sex, Key> = { female: 'sex.female', male: 'sex.male', other: 'sex.other' };
+export const DIET_KEY: Record<DietType, Key> = {
+  vegetarian: 'diet.vegetarian',
+  non_vegetarian: 'diet.non_vegetarian',
+  eggetarian: 'diet.eggetarian',
+  vegan: 'diet.vegan',
 };
-export const ACTIVITY_LABEL: Record<Activity, { title: string; hint: string }> = {
-  sedentary: { title: 'Mostly sitting', hint: 'Desk job, little exercise' },
-  light: { title: 'Lightly active', hint: 'Exercise 1 to 3 days a week' },
-  moderate: { title: 'Moderately active', hint: 'Exercise 3 to 5 days a week' },
-  active: { title: 'Very active', hint: 'Hard exercise 6 to 7 days a week' },
-  very_active: { title: 'Athlete', hint: 'Daily hard training or a physical job' },
+export const ACTIVITY_KEY: Record<Activity, { title: Key; hint: Key }> = {
+  sedentary: { title: 'activity.sedentary', hint: 'activity.sedentaryHint' },
+  light: { title: 'activity.light', hint: 'activity.lightHint' },
+  moderate: { title: 'activity.moderate', hint: 'activity.moderateHint' },
+  active: { title: 'activity.active', hint: 'activity.activeHint' },
+  very_active: { title: 'activity.very_active', hint: 'activity.very_activeHint' },
 };
 
 /** Body mass index: weight (kg) / height (m) squared, one decimal. */
@@ -32,11 +34,11 @@ export function bmi(weightKg: number, heightCm: number): number {
 }
 
 /** The standard adult BMI bands. A general guide, not a diagnosis. */
-export function bmiCategory(value: number): { label: string; tone: 'low' | 'ok' | 'high' } {
-  if (value < 18.5) return { label: 'Underweight', tone: 'low' };
-  if (value < 25) return { label: 'Healthy range', tone: 'ok' };
-  if (value < 30) return { label: 'Overweight', tone: 'high' };
-  return { label: 'Obese range', tone: 'high' };
+export function bmiCategory(value: number): { key: Key; tone: 'low' | 'ok' | 'high' } {
+  if (value < 18.5) return { key: 'prof.bmi.under', tone: 'low' };
+  if (value < 25) return { key: 'prof.bmi.healthy', tone: 'ok' };
+  if (value < 30) return { key: 'prof.bmi.over', tone: 'high' };
+  return { key: 'prof.bmi.obese', tone: 'high' };
 }
 
 /**
@@ -51,11 +53,11 @@ export function goalProgress(goal: Goal, start: number, current: number, target:
 }
 
 /** "7.5 kg to lose", "2 kg to gain", "Goal reached". */
-export function goalRemaining(goal: Goal, current: number, target: number): string {
-  if (goal === 'maintain') return Math.abs(current - target) <= 2 ? 'On target' : `${fmtKg(Math.abs(current - target))} from target`;
+export function goalRemaining(goal: Goal, current: number, target: number, t: Translate): string {
+  if (goal === 'maintain') return Math.abs(current - target) <= 2 ? t('prof.left.onTarget') : t('prof.left.fromTarget', { kg: fmtKg(Math.abs(current - target)) });
   const left = goal === 'lose' ? current - target : target - current;
-  if (left <= 0) return 'Goal reached';
-  return `${fmtKg(left)} to ${goal === 'lose' ? 'lose' : 'gain'}`;
+  if (left <= 0) return t('prof.left.reached');
+  return t(goal === 'lose' ? 'prof.left.lose' : 'prof.left.gain', { kg: fmtKg(left) });
 }
 
 /** 7.5 → "7.5 kg", 80 → "80 kg". */

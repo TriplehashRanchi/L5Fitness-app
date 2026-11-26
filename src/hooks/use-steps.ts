@@ -4,7 +4,8 @@ import { putSteps } from '@/lib/fitness-api';
 import { toDayKey, type CalendarDay } from '@/lib/datetime';
 import { stepsProvider } from '@/lib/steps/provider';
 import { summarizeWeek, type WeekSummary } from '@/lib/steps/summary';
-import type { StepsStatus } from '@/lib/steps/types';
+import { sourceLabel, type StepsStatus } from '@/lib/steps/types';
+import { useT } from '@/providers/language-provider';
 
 const SYNC_EVERY_MS = 5 * 60_000;
 /** What was last sent (or tried), kept outside the hook so remounting does not resend at once. */
@@ -35,6 +36,7 @@ function syncSteps(keys: string[], counts: (number | null)[]) {
  * the counts refresh each time it changes.
  */
 export function useSteps(now: Date, days: CalendarDay[], today: CalendarDay, goal: number) {
+  const t = useT();
   const [status, setStatus] = useState<StepsStatus | 'loading'>('loading');
   const [counts, setCounts] = useState<(number | null)[]>([]);
   /** True once the member has been through the permission screen in this session. */
@@ -99,6 +101,6 @@ export function useSteps(now: Date, days: CalendarDay[], today: CalendarDay, goa
     connect,
     reload: load,
     openSettings: stepsProvider.openSettings,
-    sourceName: stepsProvider.sourceName,
+    sourceName: sourceLabel(t, stepsProvider),
   };
 }

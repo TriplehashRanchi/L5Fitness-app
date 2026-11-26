@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar } from '@/components/avatar';
 import { ChatThread, statusLine } from '@/components/chat/chat-thread';
 import { getClientChat, sendClientMessage, type ChatWindow } from '@/lib/chat-api';
+import { useT } from '@/providers/language-provider';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -15,10 +16,11 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 export default function ClientChatScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const t = useT();
   const { id, name, image } = useLocalSearchParams<{ id: string; name?: string; image?: string }>();
   const load = useCallback((window?: ChatWindow) => getClientChat(id, window), [id]);
   const send = useCallback((body: string, clientId: string) => sendClientMessage(id, body, clientId), [id]);
-  const title = name || 'Client';
+  const title = name || t('care.chatClient');
   const peer = useMemo(() => ({ name: title, image: image || null }), [title, image]);
 
   return (
@@ -30,11 +32,11 @@ export default function ClientChatScreen() {
         load={load}
         send={send}
         bottomInset={insets.bottom}
-        emptyTitle="No messages yet"
-        emptyText={`Say hello to ${title}. They will get a notification.`}
+        emptyTitle={t('care.chatNoMessages')}
+        emptyText={t('care.chatSayHello', { name: title })}
         header={(status) => (
           <View className="flex-row items-center px-4" style={{ gap: 12, paddingTop: insets.top + 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' }}>
-            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel="Back" className="h-11 w-11 items-center justify-center active:opacity-60">
+            <Pressable onPress={() => router.back()} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('common.back')} className="h-11 w-11 items-center justify-center active:opacity-60">
               <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={18} />
             </Pressable>
             <View>
@@ -46,7 +48,7 @@ export default function ClientChatScreen() {
                 {title}
               </Text>
               <Text {...COMPACT_TEXT} accessibilityLiveRegion="polite" className={`text-xs ${status.online || status.typing ? 'font-bold text-brand' : 'text-muted'}`}>
-                {statusLine(status, 'Your client')}
+                {statusLine(status, t('care.chatYourClient'), t)}
               </Text>
             </View>
           </View>

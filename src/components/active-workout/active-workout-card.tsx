@@ -7,6 +7,7 @@ import { ExercisePhoto } from '@/components/active-workout/exercise-photo';
 import { parseExercises, type Exercise } from '@/components/active-workout/exercise-info';
 import { DisplayText } from '@/components/display-text';
 import { Bar, BRAND, CheckDot, COMPACT_TEXT, HAIRLINE, INK } from '@/components/today-card/ui';
+import { useLanguage } from '@/providers/language-provider';
 
 /** The blinking dot of the LIVE label. */
 function LiveDot() {
@@ -21,9 +22,10 @@ function LiveDot() {
 }
 
 function Stat({ label, value, unit, color = '#fff' }: { label: string; value: string; unit?: string; color?: string }) {
+  const { language } = useLanguage();
   return (
     <View className="flex-1">
-      <Text {...COMPACT_TEXT} className="text-[10px] font-bold uppercase tracking-widest text-muted">
+      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className={`text-[10px] font-bold uppercase text-muted ${language === 'en' ? 'tracking-widest' : ''}`}>
         {label}
       </Text>
       <View className="mt-0.5 flex-row items-baseline gap-1">
@@ -65,6 +67,9 @@ function Row({
   onToggleOpen: () => void;
   onToggleDone: () => void;
 }) {
+  const { t, language } = useLanguage();
+  const english = language === 'en';
+  const move = ex.amount ? `${ex.name}, ${ex.amount}` : ex.name;
   return (
     <View style={first ? null : { borderTopWidth: 1, borderTopColor: HAIRLINE }}>
       <View className="flex-row items-center">
@@ -72,16 +77,16 @@ function Row({
           onPress={onToggleOpen}
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
-          accessibilityLabel={`Move ${index + 1}: ${ex.name}${ex.amount ? `, ${ex.amount}` : ''}${done ? ', done' : ''}. ${open ? 'Hide' : 'Show'} how to do it`}
+          accessibilityLabel={t(done ? (open ? 'act.moveDoneHideA11y' : 'act.moveDoneShowA11y') : open ? 'act.moveHideA11y' : 'act.moveShowA11y', { n: index + 1, move })}
           className="flex-1 flex-row items-center gap-3 py-3 active:opacity-70"
           style={{ opacity: done && !open ? 0.5 : 1 }}>
           {open ? null : <ExercisePhoto pose={ex.pose} width={84} radius={12} />}
           <View className="flex-1">
-            <Text {...COMPACT_TEXT} className={`text-[11px] font-black uppercase tracking-widest ${current && !done ? 'text-brand' : 'text-muted'}`}>
-              {done ? 'Done' : current ? 'Now' : 'Up next'} · {index + 1} of {total}
+            <Text {...COMPACT_TEXT} className={`text-[11px] font-black uppercase ${english ? 'tracking-widest' : ''} ${current && !done ? 'text-brand' : 'text-muted'}`}>
+              {t(done ? 'act.doneOf' : current ? 'act.nowOf' : 'act.upNextOf', { n: index + 1, total })}
             </Text>
             {open ? (
-              <DisplayText {...COMPACT_TEXT} numberOfLines={2} className="mt-0.5 text-[24px] font-bold leading-7 tracking-tight text-white">
+              <DisplayText {...COMPACT_TEXT} numberOfLines={2} className="mt-0.5 text-[24px] font-bold leading-7 tracking-tight text-white" style={english ? undefined : { lineHeight: 34 }}>
                 {ex.name}
               </DisplayText>
             ) : (
@@ -93,7 +98,7 @@ function Row({
                 {ex.name}
               </Text>
             )}
-            <Text {...COMPACT_TEXT} numberOfLines={1} className="mt-0.5 text-sm text-muted">
+            <Text {...COMPACT_TEXT} numberOfLines={english ? 1 : 2} className="mt-0.5 text-sm text-muted">
               {ex.amount ? <Text className="font-bold text-brand">{ex.amount}</Text> : null}
               {ex.amount ? '  ·  ' : ''}
               {ex.focus}
@@ -105,7 +110,7 @@ function Row({
           hitSlop={8}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: done }}
-          accessibilityLabel={`Mark ${ex.name} as ${done ? 'not done' : 'done'}`}
+          accessibilityLabel={t(done ? 'act.markNotDone' : 'act.markDone', { name: ex.name })}
           className="items-center justify-center active:opacity-70"
           style={{ width: 44, height: 48 }}>
           <CheckDot done={done} />
@@ -121,11 +126,11 @@ function Row({
           <Pressable
             onPress={onToggleDone}
             accessibilityRole="button"
-            accessibilityLabel={done ? `Mark ${ex.name} as not done` : `Mark ${ex.name} as done`}
-            className={`mt-4 min-h-12 flex-row items-center justify-center gap-2 rounded-full active:opacity-80 ${done ? 'border border-white/15' : 'bg-white'}`}>
+            accessibilityLabel={t(done ? 'act.markNotDone' : 'act.markDone', { name: ex.name })}
+            className={`mt-4 min-h-12 flex-row items-center justify-center gap-2 rounded-full px-4 active:opacity-80 ${done ? 'border border-white/15' : 'bg-white'}`}>
             <SymbolView name={done ? { ios: 'arrow.uturn.backward', android: 'undo', web: 'undo' } : { ios: 'checkmark', android: 'check', web: 'check' }} tintColor={done ? '#fff' : INK} size={15} />
-            <Text {...COMPACT_TEXT} className={`text-base font-black ${done ? 'text-white' : 'text-ink'}`}>
-              {done ? 'Undo' : index + 1 < total ? 'Done · Next move' : 'Done'}
+            <Text {...COMPACT_TEXT} className={`shrink text-center text-base font-black ${done ? 'text-white' : 'text-ink'}`}>
+              {t(done ? 'act.undo' : index + 1 < total ? 'act.doneNext' : 'act.done')}
             </Text>
           </Pressable>
         </View>
@@ -154,7 +159,9 @@ export function ActiveWorkoutCard({
   onFinish: () => void;
   onCancel: () => void;
 }) {
-  const exercises = useMemo(() => parseExercises(instructions), [instructions]);
+  const { t, language } = useLanguage();
+  const english = language === 'en';
+  const exercises = useMemo(() => parseExercises(instructions, t), [instructions, t]);
   const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set());
   /** The move opened by hand ('' = all closed); null follows the first move still to do. */
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -182,34 +189,34 @@ export function ActiveWorkoutCard({
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
           <LiveDot />
-          <Text {...COMPACT_TEXT} className="text-[11px] font-black uppercase tracking-widest text-brand">
-            Live workout
+          <Text {...COMPACT_TEXT} className={`text-[11px] font-black uppercase text-brand ${english ? 'tracking-widest' : ''}`}>
+            {t('act.liveWorkout')}
           </Text>
         </View>
         <Text {...COMPACT_TEXT} className="text-xs text-muted">
-          Started {startedLabel}
+          {t('act.started', { time: startedLabel })}
         </Text>
       </View>
 
-      <DisplayText numberOfLines={2} className="mt-2 text-[28px] font-bold leading-9 tracking-tight text-white">
+      <DisplayText numberOfLines={2} className="mt-2 text-[28px] font-bold leading-9 tracking-tight text-white" style={english ? undefined : { lineHeight: 40 }}>
         {title}
       </DisplayText>
 
       <View className="mt-4 flex-row items-center gap-4">
-        <Stat label="Time" value={timeDisplay} color={BRAND} />
+        <Stat label={t('act.time')} value={timeDisplay} color={BRAND} />
         <View className="h-9 w-px bg-white/10" />
-        <Stat label="Burn" value={String(kcal)} unit="kcal" color="#fb923c" />
+        <Stat label={t('act.burn')} value={String(kcal)} unit="kcal" color="#fb923c" />
         {exercises.length ? (
           <>
             <View className="h-9 w-px bg-white/10" />
-            <Stat label="Moves" value={`${doneCount}/${exercises.length}`} />
+            <Stat label={t('act.moves')} value={`${doneCount}/${exercises.length}`} />
           </>
         ) : null}
       </View>
 
       {exercises.length ? (
         <View className="mt-4">
-          <Bar progress={progress} label="Workout progress" valueText={`${doneCount} of ${exercises.length} moves done`} height={6} />
+          <Bar progress={progress} label={t('act.workoutProgress')} valueText={t('act.movesDone', { done: doneCount, total: exercises.length })} height={6} />
         </View>
       ) : null}
 
@@ -242,21 +249,21 @@ export function ActiveWorkoutCard({
           onPress={onFinish}
           disabled={busy}
           accessibilityRole="button"
-          className={`min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-full active:opacity-80 ${allDone || !exercises.length ? 'bg-brand' : 'border border-brand/60'}`}>
+          className={`min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-full px-3 active:opacity-80 ${allDone || !exercises.length ? 'bg-brand' : 'border border-brand/60'}`}>
           {busy ? (
             <ActivityIndicator color={allDone || !exercises.length ? INK : BRAND} size="small" />
           ) : (
             <>
               <SymbolView name={{ ios: 'flag.checkered', android: 'sports_score', web: 'sports_score' }} tintColor={allDone || !exercises.length ? INK : BRAND} size={17} />
-              <Text {...COMPACT_TEXT} className={`text-base font-black ${allDone || !exercises.length ? 'text-ink' : 'text-brand'}`}>
-                Finish workout
+              <Text {...COMPACT_TEXT} className={`shrink text-center text-base font-black ${allDone || !exercises.length ? 'text-ink' : 'text-brand'}`}>
+                {t('act.finishWorkout')}
               </Text>
             </>
           )}
         </Pressable>
         <Pressable onPress={onCancel} disabled={busy} hitSlop={8} accessibilityRole="button" className="min-h-14 items-center justify-center px-4 active:opacity-60">
           <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted">
-            Cancel
+            {t('common.cancel')}
           </Text>
         </Pressable>
       </View>

@@ -1,5 +1,6 @@
 import { dayCounts } from '@/lib/day-plan';
 import type { DayItem, MyDay } from '@/lib/fitness-api';
+import type { Key } from '@/lib/i18n';
 import { SLOT_ORDER } from '@/lib/wellness-api';
 
 /** The day with the larger of the server's and the phone's step count (both are real; the bigger one is the newer). */
@@ -43,11 +44,11 @@ export function calorieSummary(items: DayItem[]) {
   return { planned, ticked };
 }
 
-/** A short line for how far along the day is. */
-export function progressLine(percent: number): string {
-  if (percent >= 100) return 'Day complete';
-  if (percent >= 85) return 'Almost there';
-  if (percent >= 50) return 'Good pace';
-  if (percent > 0) return 'Building momentum';
-  return 'Let’s start';
+/** A short line for how far along the day is. Show it with `t(progressLineKey(percent))`. */
+export function progressLineKey(percent: number): Key {
+  if (percent >= 100) return 'hm.dayComplete';
+  if (percent >= 85) return 'hm.almostThere';
+  if (percent >= 50) return 'hm.goodPace';
+  if (percent > 0) return 'hm.momentum';
+  return 'hm.letsStart';
 }

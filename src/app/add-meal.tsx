@@ -17,9 +17,14 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { FoodPicker } from '@/components/food-picker';
 import { useDeviceClock } from '@/hooks/use-device-clock';
+import { useFoods } from '@/hooks/use-foods';
 import { getZonedParts, toDayKey } from '@/lib/datetime';
-import { createMeal, MEAL_LABEL, uploadPhoto, type MealType } from '@/lib/fitness-api';
+import { getAiStatus } from '@/lib/ai-api';
+import { saveMeal, uploadPhoto, type MealType } from '@/lib/fitness-api';
+import { suggestFromPhoto, type PlateItem } from '@/lib/foods-api';
+import { useLanguage } from '@/providers/language-provider';
 import { ApiError, messageFrom, NetworkError } from '@/lib/http';
 import { checkPendingPhoto, markCameraDone, markCameraOpening, takeRecoveredPhoto } from '@/lib/pending-photo';
 
@@ -69,8 +74,19 @@ type Photo = { uri: string; mimeType?: string | null };
 
 export default function AddMealScreen() {
   const router = useRouter();
+  const { language, t } = useLanguage();
+  const english = language === 'en';
   const insets = useSafeAreaInsets();
   const { format } = useDeviceClock();
+  const { foods, byId } = useFoods();
+  const [items, setItems] = useState<PlateItem[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggested, setSuggested] = useState(false);
+  /** Is the photo-reading assistant switched on at the server? Asked once. */
+  const [canSuggest, setCanSuggest] = useState(false);
+  useEffect(() => {
+    getAiStatus().then((s) => setCanSuggest(s.enabled)).catch(() => {});
+  }, []);
 
   // Opened from a meal's own tile (Today's plan), that meal is already chosen.
   const { type } = useLocalSearchParams<{ type?: string }>();
@@ -87,21 +103,21 @@ export default function AddMealScreen() {
   /** The photo already uploaded, so a retry after a failed save does not upload it again. */
   const uploaded = useRef<{ uri: string; id: string } | null>(null);
 
-  const canSave = !busy && (photo !== null || note.trim().length > 0);
+  const canSave = !busy && (photo !== null || note.trim().length > 0 || items.length > 0);
 
   const pick = async (source: 'camera' | 'library') => {
     setError(null);
     setNeedsSettings(false);
     const ImagePicker = loadPicker();
     if (!ImagePicker) {
-      setError('Photos need the latest version of the L5 Fitness app. Install the newest build, then try again.');
+      setError(t('acc.photoNewBuild'));
       return;
     }
     try {
       if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          setError('Camera access is turned off for L5 Fitness.');
+          setError(t('acc.cameraOff'));
           setNeedsSettings(permission.canAskAgain === false);
           return;
         }
@@ -128,7 +144,7 @@ export default function AddMealScreen() {
       const asset = result.assets[0];
       setPhoto({ uri: asset.uri, mimeType: asset.mimeType });
     } catch {
-      setError('Could not open the ' + (source === 'camera' ? 'camera' : 'photo library') + '. Please try again.');
+      setError(t(source === 'camera' ? 'acc.cameraFailed' : 'acc.libraryFailed'));
     }
   };
 
@@ -160,10 +176,12 @@ export default function AddMealScreen() {
         uploadId = uploaded.current.id;
       }
       const when = new Date();
-      await createMeal({
+      // With no signal, a meal without a photo is kept on the phone and sent later (the Home screen says so).
+      await saveMeal({
         mealType,
         note: note.trim() || undefined,
         uploadId,
+        items: items.length ? items.map(({ foodId, portionId, count, oil, coconut }) => ({ foodId, portionId, count, oil, coconut })) : undefined,
         eatenAt: when.toISOString(),
         // The calendar day on the phone, so the meal lands on the right day in any time zone.
         day: toDayKey(getZonedParts(when, format.timeZone)),
@@ -176,6 +194,25 @@ export default function AddMealScreen() {
     }
   };
 
+  /** Looks at the photo and proposes foods. Nothing is saved: the member checks each one and changes what is wrong. */
+  const suggest = async () => {
+    if (!photo || suggesting) return;
+    setSuggesting(true);
+    setError(null);
+    try {
+      if (uploaded.current?.uri !== photo.uri) uploaded.current = { uri: photo.uri, id: await uploadPhoto(photo.uri, photo.mimeType) };
+      const { suggestions } = await suggestFromPhoto(uploaded.current.id);
+      const next: PlateItem[] = suggestions.map((s) => ({ foodId: s.foodId, portionId: s.portionId, count: s.count, oil: 'usual', coconut: 'usual' }));
+      // What the member already added stays; a suggested food they already have is not added twice.
+      setItems((now) => [...now, ...next.filter((n) => !now.some((x) => x.foodId === n.foodId))]);
+      setSuggested(true);
+    } catch (e) {
+      setError(messageFrom(e));
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
   const sourceTile = (source: 'camera' | 'library', primary: boolean) => {
     const camera = source === 'camera';
     return (
@@ -183,9 +220,9 @@ export default function AddMealScreen() {
         onPress={() => void pick(source)}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel={camera ? 'Take a photo' : 'Choose a photo'}
+        accessibilityLabel={t(camera ? 'acc.takeA11y' : 'acc.chooseA11y')}
         className="flex-1 items-center justify-center active:opacity-80"
-        style={{ height: 112, borderRadius: 26, gap: 10, backgroundColor: primary ? BRAND : SOFT }}>
+        style={{ minHeight: 112, paddingHorizontal: 8, paddingVertical: 10, borderRadius: 26, gap: 10, backgroundColor: primary ? BRAND : SOFT }}>
         <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: primary ? 'rgba(5,10,7,0.12)' : 'rgba(255,255,255,0.08)' }}>
           <SymbolView
             name={camera ? { ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' } : { ios: 'photo.on.rectangle', android: 'photo_library', web: 'photo_library' }}
@@ -193,8 +230,8 @@ export default function AddMealScreen() {
             size={20}
           />
         </View>
-        <Text maxFontSizeMultiplier={1.3} className="text-sm font-bold" style={{ color: primary ? INK : '#ffffff' }}>
-          {camera ? 'Take photo' : 'Choose photo'}
+        <Text maxFontSizeMultiplier={1.3} className="text-center text-sm font-bold" style={{ color: primary ? INK : '#ffffff' }}>
+          {camera ? t('meal.takePhoto') : t('meal.choosePhoto')}
         </Text>
       </Pressable>
     );
@@ -213,15 +250,15 @@ export default function AddMealScreen() {
           contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 24, width: '100%', maxWidth: 560, alignSelf: 'center' }}>
           <View className="flex-row items-center justify-between px-5">
             <View className="flex-1">
-              <DisplayText className="text-[28px] tracking-tight text-white">Add meal</DisplayText>
-              <Text className="mt-0.5 text-sm text-muted">A photo, a note, or both.</Text>
+              <DisplayText className="text-[28px] tracking-tight text-white">{t('meal.title')}</DisplayText>
+              <Text className="mt-0.5 text-sm text-muted">{t('meal.sub')}</Text>
             </View>
             <Pressable
               onPress={() => router.back()}
               disabled={busy}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel="Close"
+              accessibilityLabel={t('common.close')}
               className="h-11 w-11 items-center justify-center rounded-full active:opacity-70"
               style={{ backgroundColor: SOFT }}>
               <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} tintColor="white" size={16} />
@@ -237,7 +274,7 @@ export default function AddMealScreen() {
                   style={{ width: '100%', aspectRatio: 4 / 3 }}
                   contentFit="cover"
                   transition={150}
-                  accessibilityLabel="Your meal photo"
+                  accessibilityLabel={t('acc.photoA11y')}
                   accessibilityIgnoresInvertColors
                 />
                 <View className="absolute flex-row" style={{ right: 12, bottom: 12, gap: 8 }}>
@@ -248,12 +285,12 @@ export default function AddMealScreen() {
                     }}
                     disabled={busy}
                     accessibilityRole="button"
-                    accessibilityLabel="Change the photo"
+                    accessibilityLabel={t('acc.changePhoto')}
                     className="flex-row items-center rounded-full active:opacity-70"
                     style={{ gap: 6, minHeight: 40, paddingHorizontal: 14, backgroundColor: 'rgba(0,0,0,0.72)' }}>
                     <SymbolView name={{ ios: 'arrow.triangle.2.circlepath', android: 'autorenew', web: 'autorenew' }} tintColor="white" size={14} />
                     <Text maxFontSizeMultiplier={1.3} className="text-[13px] font-bold text-white">
-                      Change
+                      {t('acc.change')}
                     </Text>
                   </Pressable>
                 </View>
@@ -266,14 +303,14 @@ export default function AddMealScreen() {
             )}
             {restored && photo ? (
               <Text accessibilityLiveRegion="polite" className="mt-3 text-[13px] leading-5 text-muted">
-                Your phone closed L5 Fitness while the camera was open. Here is the photo you took.
+                {t('acc.restored')}
               </Text>
             ) : null}
           </View>
 
           {/* Which meal */}
-          <Text className="mb-3 mt-8 px-5 text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: 1.4 }}>
-            Which meal
+          <Text className="mb-3 mt-8 px-5 text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: english ? 1.4 : 0 }}>
+            {t('meal.which')}
           </Text>
           <View className="flex-row px-5" style={{ gap: 8 }}>
             {TYPES.map((type) => {
@@ -283,23 +320,47 @@ export default function AddMealScreen() {
                   key={type}
                   onPress={() => setMealType(type)}
                   accessibilityRole="button"
-                  accessibilityLabel={MEAL_LABEL[type]}
+                  accessibilityLabel={t(`meal.${type}`)}
                   accessibilityState={{ selected }}
                   className="flex-1 items-center justify-center active:opacity-80"
-                  style={{ height: 72, borderRadius: 20, gap: 6, backgroundColor: selected ? '#ffffff' : SOFT }}>
+                  style={{ minHeight: 72, paddingHorizontal: 2, paddingVertical: 8, borderRadius: 20, gap: 6, backgroundColor: selected ? '#ffffff' : SOFT }}>
                   <SymbolView name={MEAL_ICON[type]} tintColor={selected ? INK : MUTED} size={18} />
-                  <Text maxFontSizeMultiplier={1.2} numberOfLines={1} adjustsFontSizeToFit className="text-[12px] font-bold" style={{ color: selected ? INK : MUTED }}>
-                    {MEAL_LABEL[type]}
+                  <Text maxFontSizeMultiplier={1.2} numberOfLines={english ? 1 : 2} adjustsFontSizeToFit className="text-center text-[12px] font-bold" style={{ color: selected ? INK : MUTED }}>
+                    {t(`meal.${type}`)}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
 
+          {/* What was eaten, from the food library */}
+          <Text className="mb-3 mt-8 px-5 text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: english ? 1.4 : 0 }}>
+            {t('meal.foods')}
+          </Text>
+          <View className="px-5">
+            <FoodPicker foods={foods} byId={byId} items={items} onChange={setItems} disabled={busy} />
+            {photo && canSuggest ? (
+              <Pressable
+                onPress={() => void suggest()}
+                disabled={busy || suggesting}
+                accessibilityRole="button"
+                className="mt-4 flex-row items-center justify-center rounded-full active:opacity-80"
+                style={{ gap: 8, minHeight: 46, backgroundColor: SOFT }}>
+                {suggesting ? <ActivityIndicator color="white" size="small" /> : <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} tintColor="white" size={15} />}
+                <Text maxFontSizeMultiplier={1.3} className="text-sm font-bold text-white">
+                  {suggesting ? t('meal.suggesting') : t('meal.suggest')}
+                </Text>
+              </Pressable>
+            ) : null}
+            {suggested ? (
+              <Text className="mt-2 text-[12px] leading-4 text-muted">{t('meal.suggested')}</Text>
+            ) : null}
+          </View>
+
           {/* Note */}
           <View className="mb-3 mt-8 flex-row items-end justify-between px-5">
-            <Text className="text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: 1.4 }}>
-              Note {photo ? '(optional)' : ''}
+            <Text className="shrink text-[11px] font-bold uppercase text-muted" style={{ letterSpacing: english ? 1.4 : 0 }}>
+              {t('meal.note')} {photo || items.length ? t('meal.optional') : ''}
             </Text>
             <Text className="text-[11px] text-muted">{note.length}/200</Text>
           </View>
@@ -307,7 +368,7 @@ export default function AddMealScreen() {
             <TextInput
               value={note}
               onChangeText={setNote}
-              placeholder="What did you eat?"
+              placeholder={t('meal.notePlaceholder')}
               placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
@@ -315,7 +376,7 @@ export default function AddMealScreen() {
               multiline
               editable={!busy}
               maxFontSizeMultiplier={1.4}
-              accessibilityLabel="Note"
+              accessibilityLabel={t('meal.note')}
               style={{ minHeight: 84, textAlignVertical: 'top', backgroundColor: SOFT, borderRadius: 20 }}
               className="px-4 py-3.5 text-base text-white"
             />
@@ -326,7 +387,7 @@ export default function AddMealScreen() {
               <Text className="text-sm text-white">{error}</Text>
               {needsSettings ? (
                 <Pressable onPress={() => Linking.openSettings()} hitSlop={8} accessibilityRole="button">
-                  <Text className="mt-1 text-sm font-bold text-brand">Open settings</Text>
+                  <Text className="mt-1 text-sm font-bold text-brand">{t('acc.openSettings')}</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -341,17 +402,17 @@ export default function AddMealScreen() {
             accessibilityRole="button"
             accessibilityState={{ disabled: !canSave, busy }}
             className="items-center justify-center rounded-full active:opacity-80"
-            style={{ minHeight: 56, backgroundColor: canSave || busy ? BRAND : SOFT }}>
+            style={{ minHeight: 56, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: canSave || busy ? BRAND : SOFT }}>
             {busy ? (
               <View className="flex-row items-center" style={{ gap: 10 }}>
                 <ActivityIndicator color={INK} />
                 <Text maxFontSizeMultiplier={1.3} className="text-base font-bold" style={{ color: INK }}>
-                  {photo ? 'Uploading…' : 'Saving…'}
+                  {photo ? t('meal.uploading') : t('meal.saving')}
                 </Text>
               </View>
             ) : (
-              <Text maxFontSizeMultiplier={1.3} className="text-base font-bold" style={{ color: canSave ? INK : MUTED }}>
-                {canSave ? 'Save meal' : 'Add a photo or a note'}
+              <Text maxFontSizeMultiplier={1.3} className="text-center text-base font-bold" style={{ color: canSave ? INK : MUTED }}>
+                {canSave ? t('meal.save') : t('meal.addSomething')}
               </Text>
             )}
           </Pressable>

@@ -6,6 +6,8 @@ import { SymbolView } from 'expo-symbols';
 
 import { DisplayText } from '@/components/display-text';
 import { BRAND, COMPACT_TEXT, TRACK } from '@/components/today-card/ui';
+import type { Translate } from '@/lib/i18n';
+import { useLanguage } from '@/providers/language-provider';
 
 const SIZE = 76;
 const STROKE = 8;
@@ -54,12 +56,12 @@ function Ring({ percent }: { percent: number }) {
 }
 
 /** A short, warm line for how the day is going. */
-function headline(percent: number, total: number, done: number) {
-  if (total > 0 && done >= total) return 'Day complete';
-  if (percent === 0) return 'Let’s get started';
-  if (percent < 40) return 'Nice start';
-  if (percent < 75) return 'Going great';
-  return 'Almost there';
+function headline(percent: number, total: number, done: number, t: Translate) {
+  if (total > 0 && done >= total) return t('hm.dayComplete');
+  if (percent === 0) return t('hm.letsGetStarted');
+  if (percent < 40) return t('hm.niceStart');
+  if (percent < 75) return t('hm.goingGreat');
+  return t('hm.almostThere');
 }
 
 /** One calm header: a short line about how the day is going, the count, and the ring. */
@@ -74,23 +76,25 @@ export function CardHeader({
   done: number;
   total: number;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const complete = total > 0 && done >= total;
-  const line = headline(percent, total, done);
+  const line = headline(percent, total, done, t);
   return (
     <View className="flex-row items-center gap-4">
       <View className="flex-1">
-        <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-[26px] leading-8 tracking-tight text-white">
+        <DisplayText {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit className="text-[26px] leading-8 tracking-tight text-white" style={indic ? { fontSize: 22, lineHeight: 31 } : undefined}>
           {line}
         </DisplayText>
-        <Text {...COMPACT_TEXT} className="mt-1 text-sm text-muted" numberOfLines={1}>
-          {dateLabel} · {done} of {total} done
+        <Text {...COMPACT_TEXT} className="mt-1 text-sm text-muted" numberOfLines={indic ? 2 : 1}>
+          {t('hm.dateDone', { date: dateLabel, done, total })}
         </Text>
       </View>
       <View
         accessible
         accessibilityRole="progressbar"
-        accessibilityLabel={`Today's plan, ${line}`}
-        accessibilityValue={{ min: 0, max: 100, now: percent, text: `${percent} percent complete, ${done} of ${total} done` }}>
+        accessibilityLabel={t('hm.planLineA11y', { line })}
+        accessibilityValue={{ min: 0, max: 100, now: percent, text: t('hm.percentDone', { percent, done, total }) }}>
         <Ring percent={complete ? 100 : percent} />
       </View>
     </View>

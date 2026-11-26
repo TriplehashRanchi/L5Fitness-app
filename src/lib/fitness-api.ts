@@ -1,5 +1,7 @@
 /** Fitness data from L5Fitness-api: catalog, the member's tracking, classes. */
+import { sendOrQueue } from '@/lib/outbox';
 import { api, NetworkError } from '@/lib/http';
+import { tr, type Key } from '@/lib/i18n';
 import type { MealSlot } from '@/lib/wellness-api';
 
 export type CoachingStatus = { status: 'not_shared' | 'pending' | 'accepted'; sharing: boolean; dietitianName: string | null; dietitianId: string | null };
@@ -72,16 +74,27 @@ export type Meal = {
   eatenAt: string;
   /** short-lived link to the photo in storage, or null */
   photoUrl: string | null;
+  /** What was eaten, from the food library, with the range the server worked out. Null for a photo or note only. */
+  items?: { name: string; unit: string; count: number }[] | null;
+  kcalMin?: number | null;
+  kcalMax?: number | null;
+  proteinMin?: number | null;
+  proteinMax?: number | null;
 };
 
-export const MEAL_LABEL: Record<MealType, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  dinner: 'Dinner',
-  snack: 'Snack',
+/** The name of each meal: show it with `t(MEAL_LABEL_KEY[type])`. */
+export const MEAL_LABEL_KEY: Record<MealType, Key> = {
+  breakfast: 'meal.breakfast',
+  lunch: 'meal.lunch',
+  dinner: 'meal.dinner',
+  snack: 'meal.snack',
 };
 
 export type Home = {
+  /** Has the optional daily check-in been answered today? */
+  checkedInToday: boolean;
+  /** Set while the plan is paused for illness, injury or a clinician's restriction. */
+  pause: import('@/lib/wellness-api').Pause | null;
   coaching: CoachingStatus;
   today: string;
   plan: Workout | null;
@@ -109,11 +122,12 @@ export type Home = {
   steps?: { value: number | null; goal: number };
 };
 
-export const LEVEL_LABEL: Record<Level, string> = {
-  beginner: 'Beginner',
-  intermediate: 'Intermediate',
-  advanced: 'Advanced',
-  all: 'All levels',
+/** The name of each level: show it with `t(LEVEL_LABEL_KEY[level])`. */
+export const LEVEL_LABEL_KEY: Record<Level, Key> = {
+  beginner: 'hm.levelBeginner',
+  intermediate: 'hm.levelIntermediate',
+  advanced: 'hm.levelAdvanced',
+  all: 'hm.levelAll',
 };
 
 /** `today` and `weekStart` are the phone's own calendar days (YYYY-MM-DD). */
@@ -155,8 +169,10 @@ export async function updateSettings(patch: Partial<Settings>) {
 
 // ── Water ────────────────────────────────────────────────────────────────────────────────────
 
-export async function addWater(amountMl: number, day: string) {
-  return (await api<{ water: WaterToday }>('/water', { method: 'POST', body: { amountMl, day } })).water;
+/** A drink of water. Returns the day's totals, or null when it was kept on the phone to send later (the screen keeps what it showed). */
+export async function addWater(amountMl: number, day: string): Promise<WaterToday | null> {
+  const out = await sendOrQueue<{ water: WaterToday }>({ kind: 'water', method: 'POST', path: '/water', body: { amountMl, day } });
+  return out.queued ? null : out.data.water;
 }
 
 export async function undoWater(id: string, day: string) {
@@ -180,12 +196,12 @@ export async function uploadPhoto(uri: string, mimeType?: string | null): Promis
   try {
     blob = await (await fetch(uri)).blob();
   } catch {
-    throw new Error('Could not read that photo. Please choose another one.');
+    throw new Error(tr('hm.photoRead'));
   }
   const wanted = (mimeType || blob.type || 'image/jpeg').toLowerCase().replace('image/jpg', 'image/jpeg');
   const contentType = PHOTO_TYPES.includes(wanted) ? wanted : 'image/jpeg';
-  if (blob.size > MAX_PHOTO_BYTES) throw new Error('That photo is larger than 20 MB. Choose a smaller one.');
-  if (blob.size === 0) throw new Error('That photo is empty. Please choose another one.');
+  if (blob.size > MAX_PHOTO_BYTES) throw new Error(tr('hm.photoTooBig'));
+  if (blob.size === 0) throw new Error(tr('hm.photoEmpty'));
 
   const created = await api<{ upload: { id: string }; uploadUrl: string; headers: Record<string, string> }>(
     '/uploads',
@@ -197,19 +213,32 @@ export async function uploadPhoto(uri: string, mimeType?: string | null): Promis
   try {
     put = await fetch(created.uploadUrl, { method: 'PUT', headers: created.headers, body: blob, signal: controller.signal });
   } catch {
-    throw new NetworkError("Can't reach the server. Check your internet connection and try again.");
+    throw new NetworkError(tr('hm.noServer'));
   } finally {
     clearTimeout(timer);
   }
-  if (!put.ok) throw new Error('The photo could not be uploaded. Please try again.');
+  if (!put.ok) throw new Error(tr('hm.photoUpload'));
   await api(`/uploads/${created.upload.id}/complete`, { method: 'POST' });
   return created.upload.id;
+}
+
+export type SaveResult<T> = { queued: false; value: T } | { queued: true };
+
+/**
+ * Saves a meal. With no signal, a meal without a photo is kept on the phone and sent later, once. (A photo has
+ * to be uploaded first, which needs a connection, so a meal with a photo is saved the usual way.)
+ */
+export async function saveMeal(input: Parameters<typeof createMeal>[0]): Promise<SaveResult<Meal>> {
+  if (input.uploadId) return { queued: false, value: await createMeal(input) };
+  const out = await sendOrQueue<{ meal: Meal }>({ kind: 'meal', method: 'POST', path: '/meals', body: input });
+  return out.queued ? { queued: true } : { queued: false, value: out.data.meal };
 }
 
 export async function createMeal(input: {
   mealType: MealType;
   note?: string;
   uploadId?: string;
+  items?: { foodId: string; portionId: string; count: number; oil?: string; coconut?: string }[];
   eatenAt: string;
   day: string;
 }) {

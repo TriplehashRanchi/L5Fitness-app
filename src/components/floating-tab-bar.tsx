@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { blobPath } from '@/lib/blob-path';
+import { useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
@@ -44,7 +45,7 @@ const ICONS: Record<string, (color: string) => React.ReactNode> = {
   ),
 };
 
-const LABELS: Record<string, string> = { index: 'Home', logs: 'Activity', diet: 'Diet', profile: 'Profile' };
+const LABEL_KEYS = { index: 'tabs.home', logs: 'tabs.activity', diet: 'tabs.diet', profile: 'tabs.profile' } as const;
 
 const R = 36; // radius of each lobe, so the pill is 72px tall
 const STEP = 74; // distance between circle centres
@@ -54,8 +55,9 @@ const BUTTON = 60;
 /** Floating white blob pill: four grey bead circles with thin outline icons. The active one is brand green. */
 export function FloatingTabBar({ state, emitter, navigateToTab, insets }: BottomTabBarProps) {
   const { role } = useProfile();
+  const t = useT();
   const chatTab = role === 'member';
-  const routes = state.routes.filter((r) => LABELS[r.name]);
+  const routes = state.routes.filter((r) => r.name in LABEL_KEYS);
   const n = routes.length;
   const width = R * 2 + (n - 1) * STEP;
   return (
@@ -78,7 +80,7 @@ export function FloatingTabBar({ state, emitter, navigateToTab, insets }: Bottom
               onPress={onPress}
               onLongPress={() => emitter.emit({ type: 'tabLongPress', target: route.key })}
               accessibilityRole="tab"
-              accessibilityLabel={route.name === 'diet' ? (chatTab ? 'Chat with your dietitian' : 'Clients') : LABELS[route.name]}
+              accessibilityLabel={route.name === 'diet' ? (chatTab ? t('tabs.chat') : t('tabs.clients')) : t(LABEL_KEYS[route.name as keyof typeof LABEL_KEYS])}
               accessibilityState={{ selected: focused }}
               style={({ pressed }) => ({
                 position: 'absolute',

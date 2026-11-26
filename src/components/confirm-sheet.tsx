@@ -1,5 +1,7 @@
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 
+import { useT } from '@/providers/language-provider';
+
 /**
  * A confirmation box that looks the same on iPhone, Android and web (the system alert does not
  * work on web). Use it before anything that cannot be undone.
@@ -23,6 +25,7 @@ export function ConfirmSheet({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const t = useT();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View className="flex-1 items-center justify-center bg-black/70 px-6">
@@ -38,16 +41,16 @@ export function ConfirmSheet({
               onPress={onCancel}
               disabled={busy}
               accessibilityRole="button"
-              className="flex-1 items-center rounded-full border border-white/15 py-3 active:opacity-70">
-              <Text maxFontSizeMultiplier={1.3} className="font-bold text-white">
-                Cancel
+              className="flex-1 items-center justify-center rounded-full border border-white/15 px-3 py-3 active:opacity-70">
+              <Text maxFontSizeMultiplier={1.3} className="text-center font-bold text-white">
+                {t('common.cancel')}
               </Text>
             </Pressable>
             <Pressable
               onPress={onConfirm}
               disabled={busy}
               accessibilityRole="button"
-              className={`flex-1 items-center rounded-full py-3 active:opacity-80 ${
+              className={`flex-1 items-center justify-center rounded-full px-3 py-3 active:opacity-80 ${
                 destructive ? 'bg-accent' : 'bg-brand'
               }`}>
               {busy ? (
@@ -55,7 +58,7 @@ export function ConfirmSheet({
               ) : (
                 <Text
                   maxFontSizeMultiplier={1.3}
-                  className={`font-bold ${destructive ? 'text-white' : 'text-ink'}`}>
+                  className={`text-center font-bold ${destructive ? 'text-white' : 'text-ink'}`}>
                   {confirmLabel}
                 </Text>
               )}

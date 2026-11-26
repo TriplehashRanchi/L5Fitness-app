@@ -3,11 +3,13 @@ import { View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 
 import { HAIRLINE } from '@/components/today-card/ui';
+import { useT } from '@/providers/language-provider';
 
 const BLOCKS = [120, 150, 100, 110, 110];
 
 /** Same card, same block heights, while Home is still loading. */
 export function TodayCardSkeleton() {
+  const t = useT();
   const reduce = useReducedMotion();
   const o = useSharedValue(0.5);
   useEffect(() => {
@@ -18,7 +20,7 @@ export function TodayCardSkeleton() {
   return (
     <View
       accessible
-      accessibilityLabel="Loading today's plan"
+      accessibilityLabel={t('hm.loadingPlan')}
       accessibilityRole="progressbar"
       className="mx-5 mb-5"
       style={{ padding: 18 }}>

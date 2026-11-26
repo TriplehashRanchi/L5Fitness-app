@@ -10,7 +10,9 @@ import { DisplayText } from '@/components/display-text';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { useStepHistory, type StepDay } from '@/hooks/use-step-history';
 import { dayLabel, getZonedParts, toDayKey } from '@/lib/datetime';
+import type { Key } from '@/lib/i18n';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
+import { useLanguage, useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
@@ -40,8 +42,17 @@ const TIER_GLOW: Partial<Record<Tier, string>> = { hot: '0 0 10px 2px rgba(255,9
 /** "8.4k" for the chart's target label. */
 const short = (n: number) => (n >= 1000 ? `${Math.round(n / 100) / 10}k` : String(n));
 
+/** The legend under the month's chart. */
+const LEGEND: readonly (readonly [Tier, Key])[] = [
+  ['ice', 'act.tierQuiet'],
+  ['low', 'act.tierOnWay'],
+  ['goal', 'act.tierTarget'],
+  ['hot', 'act.tierFire'],
+];
+
 /** The day's steps inside a thin ring that fills toward the target, with the energy that walking used right under them. */
 function StepsRing({ steps, goal, kcal, locale }: { steps: number | null; goal: number; kcal: number | null; locale: string }) {
+  const t = useT();
   const r = (RING - RING_STROKE) / 2;
   const length = 2 * Math.PI * r;
   const ratio = steps == null ? 0 : Math.min(1, steps / Math.max(1, goal));
@@ -51,7 +62,15 @@ function StepsRing({ steps, goal, kcal, locale }: { steps: number | null; goal: 
     <View
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={steps == null ? 'No steps for this day' : `${steps.toLocaleString(locale)} of ${goal.toLocaleString(locale)} steps${kcal != null ? `, about ${kcal.toLocaleString(locale)} kilocalories` : ''}`}
+      accessibilityLabel={
+        steps == null
+          ? t('act.noStepsForDay')
+          : t(kcal != null ? 'act.stepsOfGoalKcalA11y' : 'act.stepsOfGoalA11y', {
+              steps: steps.toLocaleString(locale),
+              goal: goal.toLocaleString(locale),
+              kcal: kcal?.toLocaleString(locale) ?? '',
+            })
+      }
       accessibilityValue={{ min: 0, max: 100, now: Math.round(ratio * 100) }}
       style={{ width: RING, height: RING, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={RING} height={RING} style={{ position: 'absolute' }}>
@@ -77,8 +96,8 @@ function StepsRing({ steps, goal, kcal, locale }: { steps: number | null; goal: 
       <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-[44px] leading-[50px] tracking-tight text-white" style={{ maxWidth: RING - 56 }}>
         {steps == null ? '–' : steps.toLocaleString(locale)}
       </DisplayText>
-      <Text {...COMPACT_TEXT} className="mt-0.5 text-xs font-semibold text-muted">
-        of {goal.toLocaleString(locale)} steps
+      <Text {...COMPACT_TEXT} numberOfLines={2} className="mt-0.5 text-center text-xs font-semibold text-muted" style={{ maxWidth: RING - 48 }}>
+        {t('act.ofGoalSteps', { goal: goal.toLocaleString(locale) })}
       </Text>
       {kcal != null ? (
         <View className="flex-row items-center" style={{ gap: 5, marginTop: 10 }}>
@@ -108,6 +127,7 @@ function MonthChart({
   locale: string;
   todayKey: string;
 }) {
+  const t = useT();
   const top = Math.max(goal, ...days.map((d) => d.steps ?? 0), 1) * 1.08;
   const goalY = CHART_HEIGHT - (goal / top) * CHART_HEIGHT;
   return (
@@ -127,7 +147,10 @@ function MonthChart({
                 onPress={() => onSelect(d.key)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${dayLabel(d.key, todayKey, locale)}, ${d.steps == null ? 'no data' : `${steps.toLocaleString(locale)} steps`}`}
+                accessibilityLabel={t(d.steps == null ? 'act.dayNoDataA11y' : 'act.dayStepsA11y', {
+                  day: dayLabel(d.key, todayKey, locale),
+                  steps: steps.toLocaleString(locale),
+                })}
                 className="flex-1 items-center justify-end"
                 style={{ height: CHART_HEIGHT }}>
                 <View
@@ -146,18 +169,11 @@ function MonthChart({
         </View>
       </View>
       <View className="mt-4 flex-row flex-wrap items-center justify-center" style={{ gap: 14 }}>
-        {(
-          [
-            ['ice', 'Quiet'],
-            ['low', 'On the way'],
-            ['goal', 'Target'],
-            ['hot', 'On fire'],
-          ] as const
-        ).map(([tier, label]) => (
+        {LEGEND.map(([tier, labelKey]) => (
           <View key={tier} className="flex-row items-center" style={{ gap: 5 }}>
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: TIER_COLOR[tier], boxShadow: TIER_GLOW[tier] }} />
             <Text {...COMPACT_TEXT} className="text-[11px] font-semibold text-muted">
-              {label}
+              {t(labelKey)}
             </Text>
           </View>
         ))}
@@ -171,6 +187,7 @@ export default function StepsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { now, format } = useDeviceClock();
+  const { t, language } = useLanguage();
   const today = getZonedParts(now, format.timeZone);
   const todayKey = toDayKey(today);
   const history = useStepHistory(today, DAILY_STEP_GOAL);
@@ -203,9 +220,9 @@ export default function StepsScreen() {
   const needsConnect = status === 'needs-permission' || status === 'needs-setup';
   const newestFirst = days ? [...days].reverse() : [];
   const stats = [
-    { label: 'Average', value: known.length ? fmt(average) : '–' },
-    { label: 'Best day', value: best?.steps ? fmt(best.steps) : '–' },
-    { label: 'Target met', value: known.length ? `${goalDays}/${known.length}` : '–' },
+    { label: t('act.average'), value: known.length ? fmt(average) : '–' },
+    { label: t('act.bestDay'), value: best?.steps ? fmt(best.steps) : '–' },
+    { label: t('act.targetMet'), value: known.length ? `${goalDays}/${known.length}` : '–' },
   ];
 
   return (
@@ -220,12 +237,17 @@ export default function StepsScreen() {
             onPress={() => router.back()}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Back"
+            accessibilityLabel={t('common.back')}
             className="h-11 w-11 items-center justify-center rounded-full bg-card active:opacity-70">
             <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={16} />
           </Pressable>
-          <DisplayText accessibilityRole="header" className="flex-1 text-[28px] tracking-tight text-white" numberOfLines={1}>
-            Steps
+          <DisplayText
+            accessibilityRole="header"
+            className="flex-1 text-[28px] tracking-tight text-white"
+            style={language === 'en' ? undefined : { lineHeight: 42 }}
+            numberOfLines={1}
+            adjustsFontSizeToFit>
+            {t('act.steps')}
           </DisplayText>
         </View>
 
@@ -233,7 +255,7 @@ export default function StepsScreen() {
           <View accessibilityRole="alert" className="mx-5 mb-4 mt-2 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
             <Text className="text-sm font-semibold text-white">{history.error}</Text>
             <Pressable onPress={history.reload} accessibilityRole="button" className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
-              <Text className="text-sm font-bold text-ink">Retry</Text>
+              <Text className="text-sm font-bold text-ink">{t('act.retry')}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -252,7 +274,7 @@ export default function StepsScreen() {
                   disabled={!canGoBack}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel="Previous day"
+                  accessibilityLabel={t('act.previousDay')}
                   accessibilityState={{ disabled: !canGoBack }}
                   className="h-11 w-11 items-center justify-center rounded-full bg-card active:opacity-70"
                   style={{ opacity: canGoBack ? 1 : 0.3 }}>
@@ -263,9 +285,9 @@ export default function StepsScreen() {
                     {dayLabel(selected, todayKey, format.locale)}
                   </Text>
                   {selected !== todayKey ? (
-                    <Pressable onPress={() => setPicked(todayKey)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Back to today">
+                    <Pressable onPress={() => setPicked(todayKey)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('act.backToToday')}>
                       <Text {...COMPACT_TEXT} className="mt-0.5 text-xs font-bold text-brand">
-                        Go to today
+                        {t('act.goToToday')}
                       </Text>
                     </Pressable>
                   ) : null}
@@ -275,7 +297,7 @@ export default function StepsScreen() {
                   disabled={!canGoForward}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel="Next day"
+                  accessibilityLabel={t('act.nextDay')}
                   accessibilityState={{ disabled: !canGoForward }}
                   className="h-11 w-11 items-center justify-center rounded-full bg-card active:opacity-70"
                   style={{ opacity: canGoForward ? 1 : 0.3 }}>
@@ -292,22 +314,20 @@ export default function StepsScreen() {
                     tintColor={shownTier === 'hot' ? HOT : BRAND}
                     size={18}
                   />
-                  <Text {...COMPACT_TEXT} className="text-sm font-bold" style={{ color: shownTier === 'hot' ? HOT : BRAND }}>
-                    {shownTier === 'hot' ? `On fire! ${fmt(shownSteps! - goal)} over target` : 'Great day! Target reached'}
+                  <Text {...COMPACT_TEXT} className="text-sm font-bold" style={{ flexShrink: 1, color: shownTier === 'hot' ? HOT : BRAND }}>
+                    {shownTier === 'hot' ? t('act.onFireOver', { n: fmt(shownSteps! - goal) }) : t('act.greatDay')}
                   </Text>
                 </View>
               ) : (
-                <Text {...COMPACT_TEXT} className="mt-4 text-sm font-semibold" style={{ color: shownTier === 'ice' ? ICE : '#ffffff' }}>
+                <Text {...COMPACT_TEXT} className="mt-4 text-center text-sm font-semibold" style={{ color: shownTier === 'ice' ? ICE : '#ffffff' }}>
                   {shownSteps == null
-                    ? 'No steps saved for this day'
-                    : shownTier === 'ice'
-                      ? `Quiet day · ${fmt(goal - shownSteps)} steps to go`
-                      : `${fmt(goal - shownSteps)} steps to go`}
+                    ? t('act.noStepsSaved')
+                    : t(shownTier === 'ice' ? 'act.quietToGo' : 'act.stepsToGoCount', { n: fmt(goal - shownSteps) })}
                 </Text>
               )}
               {history.prescribed ? (
                 <Text {...COMPACT_TEXT} className="mt-1 text-xs text-muted">
-                  Target set by your dietitian
+                  {t('act.targetByDietitian')}
                 </Text>
               ) : null}
             </View>
@@ -316,19 +336,19 @@ export default function StepsScreen() {
               <View className="mx-5 mb-4 flex-row items-center gap-3 rounded-3xl border border-white/5 bg-card" style={{ padding: 16 }}>
                 <View className="flex-1">
                   <Text {...COMPACT_TEXT} className="text-sm font-bold text-white">
-                    Connect {history.sourceName}
+                    {t('act.connectSource', { source: history.sourceName })}
                   </Text>
                   <Text {...COMPACT_TEXT} className="mt-0.5 text-xs leading-4 text-muted">
-                    Your phone counts your steps. Connect it to fill this page.
+                    {t('act.connectToFill')}
                   </Text>
                 </View>
                 <Pressable
                   onPress={status === 'needs-setup' ? history.openSettings : () => void history.connect()}
                   disabled={history.connecting}
                   accessibilityRole="button"
-                  accessibilityLabel={`Connect ${history.sourceName}`}
+                  accessibilityLabel={t('act.connectSource', { source: history.sourceName })}
                   className="min-h-11 items-center justify-center rounded-full bg-brand px-5 active:opacity-80">
-                  {history.connecting ? <ActivityIndicator color={INK} /> : <Text className="text-sm font-bold text-ink">{status === 'needs-setup' ? 'Set up' : 'Connect'}</Text>}
+                  {history.connecting ? <ActivityIndicator color={INK} /> : <Text className="text-sm font-bold text-ink">{t(status === 'needs-setup' ? 'act.setUp' : 'act.connect')}</Text>}
                 </Pressable>
               </View>
             ) : null}
@@ -340,7 +360,7 @@ export default function StepsScreen() {
                   <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-lg text-white">
                     {s.value}
                   </DisplayText>
-                  <Text {...COMPACT_TEXT} className="mt-0.5 text-[11px] font-semibold text-muted">
+                  <Text {...COMPACT_TEXT} numberOfLines={2} className="mt-0.5 px-1 text-center text-[11px] font-semibold text-muted">
                     {s.label}
                   </Text>
                 </View>
@@ -356,10 +376,10 @@ export default function StepsScreen() {
             <View className="mx-5" style={{ paddingTop: 20, borderTopWidth: 1, borderTopColor: HAIRLINE }}>
               <View className="mb-1 flex-row items-end justify-between">
                 <Text {...COMPACT_TEXT} className="text-base font-bold text-white">
-                  History
+                  {t('act.history')}
                 </Text>
                 <Text {...COMPACT_TEXT} className="text-xs font-semibold text-muted">
-                  {newestFirst.length} days
+                  {t(newestFirst.length === 1 ? 'act.daysCountOne' : 'act.daysCountMany', { n: newestFirst.length })}
                 </Text>
               </View>
               <ScrollView
@@ -375,7 +395,18 @@ export default function StepsScreen() {
                       key={d.key}
                       onPress={() => setPicked(d.key)}
                       accessibilityRole="button"
-                      accessibilityLabel={`${dayLabel(d.key, todayKey, format.locale)}, ${steps == null ? 'no data' : `${fmt(steps)} steps`}${tier === 'hot' ? ', on fire' : tier === 'goal' ? ', target reached' : tier === 'ice' ? ', quiet day' : ''}`}
+                      accessibilityLabel={t(
+                        steps == null
+                          ? 'act.dayNoDataA11y'
+                          : tier === 'hot'
+                            ? 'act.dayStepsFireA11y'
+                            : tier === 'goal'
+                              ? 'act.dayStepsTargetA11y'
+                              : tier === 'ice'
+                                ? 'act.dayStepsQuietA11y'
+                                : 'act.dayStepsA11y',
+                        { day: dayLabel(d.key, todayKey, format.locale), steps: steps == null ? '' : fmt(steps) }
+                      )}
                       className="min-h-12 flex-row items-center gap-3 active:opacity-70"
                       style={i > 0 ? { borderTopWidth: 1, borderTopColor: HAIRLINE } : undefined}>
                       <View style={{ width: 26, alignItems: 'center' }}>
@@ -406,7 +437,7 @@ export default function StepsScreen() {
                 className="min-h-12 items-center justify-center active:opacity-70"
                 style={{ borderTopWidth: 1, borderTopColor: HAIRLINE }}>
                 <Text {...COMPACT_TEXT} className="text-sm font-bold text-brand">
-                  {showAll ? 'Show less' : 'Show more'}
+                  {t(showAll ? 'act.showLess' : 'act.showMore')}
                 </Text>
               </Pressable>
             </View>

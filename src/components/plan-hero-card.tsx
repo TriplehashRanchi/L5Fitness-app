@@ -5,6 +5,7 @@ import Svg, { Circle, ClipPath, Defs, G, Path } from 'react-native-svg';
 
 import { AthleteIllustration, ATHLETE_RATIO } from '@/components/athlete-illustration';
 import { DisplayText } from '@/components/display-text';
+import { useLanguage } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -82,6 +83,8 @@ export function PlanHeroCard({
   /** Optional photo shown instead of the drawn athlete. */
   heroImage?: ImageSource | null;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const photo = heroImage ?? DEFAULT_HERO_IMAGE;
   const w = size?.w ?? 340;
@@ -96,7 +99,7 @@ export function PlanHeroCard({
       onPress={onPress}
       onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
       accessibilityRole="button"
-      accessibilityLabel={`Open today's plan. ${title}`}
+      accessibilityLabel={t('hm.openTodayPlan', { title })}
       className="mx-5 mb-5 active:opacity-90"
       style={[{ minHeight: CARD_MIN_HEIGHT, justifyContent: 'center' }, size ? null : { backgroundColor: BRAND, borderRadius: RADIUS }]}>
       {size && path ? (
@@ -148,10 +151,10 @@ export function PlanHeroCard({
       )}
 
       <View style={{ width: '60%', paddingLeft: 22, paddingTop: NOTCH_DEPTH + 10, paddingBottom: 18 }}>
-        <DisplayText {...COMPACT_TEXT} className="text-[21px] leading-7 tracking-tight text-ink" numberOfLines={1} adjustsFontSizeToFit>
-          Today’s plan
+        <DisplayText {...COMPACT_TEXT} className="text-[21px] leading-7 tracking-tight text-ink" numberOfLines={1} adjustsFontSizeToFit style={indic ? { lineHeight: 30 } : undefined}>
+          {t('hm.todayPlan')}
         </DisplayText>
-        <Text {...COMPACT_TEXT} className="mt-0.5 text-[13px] font-semibold leading-5 text-ink/80" numberOfLines={1}>
+        <Text {...COMPACT_TEXT} className="mt-0.5 text-[13px] font-semibold leading-5 text-ink/80" numberOfLines={indic ? 2 : 1}>
           {subtitle}
         </Text>
       </View>

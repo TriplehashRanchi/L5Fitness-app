@@ -9,7 +9,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PageHeading } from '@/components/page-heading';
 import { Avatar } from '@/components/avatar';
 import { BottomTabInset } from '@/constants/theme';
-import { fmtKg, GOAL_LABEL } from '@/lib/body';
+import { fmtKg, GOAL_KEY } from '@/lib/body';
+import { useLanguage } from '@/providers/language-provider';
 import { messageFrom } from '@/lib/http';
 import { getUnreadChats } from '@/lib/chat-api';
 import { useNewChatMessages } from '@/lib/realtime';
@@ -24,6 +25,7 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 export function ClientsList() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { t, language } = useLanguage();
   // The admin sees this list too, but the line to the admin is for dietitians.
   const isDietitian = useProfile().role === 'dietitian';
   const [query, setQuery] = useState('');
@@ -101,15 +103,15 @@ export function ClientsList() {
           width: '100%', maxWidth: 840, alignSelf: 'center',
           paddingBottom: insets.bottom + (isWeb ? 0 : BottomTabInset) + 24,
         }}>
-        <PageHeading title="Your clients" subtitle="Plans, progress and a little encouragement." />
+        <PageHeading title={t('care.clientsTitle')} subtitle={t('care.clientsSubtitle')} />
         <View className="px-5">
           <View className="mt-5 h-14 flex-row items-center gap-3 rounded-2xl border border-white/10 bg-card px-5">
             <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor="#8fa396" />
             <TextInput
               value={query}
               onChangeText={setQuery}
-              accessibilityLabel="Search clients"
-              placeholder="Search by name or email"
+              accessibilityLabel={t('care.clientsSearch')}
+              placeholder={t('care.clientsSearchHint')}
               placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
@@ -133,17 +135,17 @@ export function ClientsList() {
             <Pressable
               onPress={() => router.push('/chat/admin')}
               accessibilityRole="button"
-              accessibilityLabel={adminUnread ? `Message the admin, ${adminUnread} unread` : 'Message the admin'}
+              accessibilityLabel={adminUnread ? t('care.clientsMessageAdminUnread', { n: adminUnread }) : t('care.clientsMessageAdmin')}
               className="flex-row items-center gap-4 rounded-3xl border border-white/5 bg-card p-4 active:opacity-80">
               <View className="items-center justify-center" style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: 'rgba(56,189,248,0.15)' }}>
                 <SymbolView name={{ ios: 'checkmark.shield.fill', android: 'verified_user', web: 'verified_user' }} tintColor="#38bdf8" size={24} />
               </View>
               <View className="flex-1">
                 <Text {...COMPACT_TEXT} numberOfLines={1} className="text-base font-bold text-white">
-                  Admin
+                  {t('care.admin')}
                 </Text>
-                <Text {...COMPACT_TEXT} numberOfLines={1} className="text-xs text-muted">
-                  {adminUnread ? 'New message from the admin' : 'Message the gym admin'}
+                <Text {...COMPACT_TEXT} numberOfLines={language === 'en' ? 1 : 2} className="text-xs text-muted">
+                  {adminUnread ? t('care.clientsNewFromAdmin') : t('care.clientsMessageGymAdmin')}
                 </Text>
               </View>
               {adminUnread ? (
@@ -163,9 +165,9 @@ export function ClientsList() {
           ) : null}
           {clients?.length === 0 ? (
             <View className="items-center rounded-3xl border border-white/10 bg-card px-6 py-10">
-              <Text className="text-base font-bold text-white">{query ? 'No clients match' : 'No clients yet'}</Text>
+              <Text className="text-base font-bold text-white">{query ? t('care.clientsNoMatch') : t('care.clientsNone')}</Text>
               <Text className="mt-1 text-center text-sm text-muted">
-                {query ? 'Try another name or email.' : 'Your admin will assign clients to you. They will show up here.'}
+                {query ? t('care.clientsTryAnother') : t('care.clientsWillAssign')}
               </Text>
             </View>
           ) : null}
@@ -176,21 +178,44 @@ export function ClientsList() {
                 key={c.id}
                 onPress={() => router.push({ pathname: '/client/[id]', params: { id: c.id } })}
                 accessibilityRole="button"
-                accessibilityLabel={`${c.name}, ${GOAL_LABEL[c.goal]}`}
+                accessibilityLabel={`${c.name}, ${t(GOAL_KEY[c.goal])}`}
                 className="flex-row items-center gap-4 rounded-3xl border border-white/5 bg-card p-4 active:opacity-80">
                 <Avatar name={c.name || c.email} image={c.image} size={52} />
                 <View className="flex-1">
                   <Text {...COMPACT_TEXT} numberOfLines={1} className="text-base font-bold text-white">
                     {c.name || c.email}
                   </Text>
-                  <Text {...COMPACT_TEXT} numberOfLines={1} className="text-xs text-muted">
-                    {GOAL_LABEL[c.goal]} · {fmtKg(c.weightKg)} → {fmtKg(c.targetWeightKg)}
+                  <Text {...COMPACT_TEXT} numberOfLines={language === 'en' ? 1 : 2} className="text-xs text-muted">
+                    {t(GOAL_KEY[c.goal])} · {fmtKg(c.weightKg)} → {fmtKg(c.targetWeightKg)}
                   </Text>
+                  {c.pauseStatus || c.needsReview || c.lifecycle === 'at_risk' || c.openCases > 0 ? (
+                    <View className="mt-1 flex-row flex-wrap gap-1.5">
+                      {c.pauseStatus ? (
+                        <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: 'rgba(255,200,87,0.15)' }}>
+                          <Text {...COMPACT_TEXT} className="text-[11px] font-bold" style={{ color: '#ffc857' }}>
+                            {c.pauseStatus === 'restart_requested' ? t('care.clientReadyRestart') : t('care.clientsPaused')}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {c.lifecycle === 'at_risk' || c.openCases > 0 ? (
+                        <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: 'rgba(255,90,95,0.15)' }}>
+                          <Text {...COMPACT_TEXT} className="text-[11px] font-bold" style={{ color: '#ff5a5f' }}>
+                            {c.openCases > 0 ? t(c.openCases === 1 ? 'care.clientsCaseOne' : 'care.clientsCaseMany', { n: c.openCases }) : t('care.clientsAtRisk')}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {c.needsReview ? (
+                        <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: 'rgba(255,200,87,0.15)' }}>
+                          <Text {...COMPACT_TEXT} className="text-[11px] font-bold" style={{ color: '#ffc857' }}>{t('care.clientsReviewHealth')}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
                 {unread[c.id] ? (
                   <View
                     accessible
-                    accessibilityLabel={`${unread[c.id]} unread ${unread[c.id] === 1 ? 'message' : 'messages'}`}
+                    accessibilityLabel={t(unread[c.id] === 1 ? 'care.clientsUnreadOne' : 'care.clientsUnreadMany', { n: unread[c.id] })}
                     className="items-center justify-center rounded-full bg-brand"
                     style={{ minWidth: 24, height: 24, paddingHorizontal: 7 }}>
                     <Text {...COMPACT_TEXT} className="text-xs font-black text-ink">
@@ -203,7 +228,7 @@ export function ClientsList() {
                     {percent == null ? '–' : `${percent}%`}
                   </Text>
                   <Text {...COMPACT_TEXT} className="text-[10px] text-muted">
-                    {percent == null ? 'no plan' : '7-day plan'}
+                    {percent == null ? t('care.clientsNoPlanShort') : t('care.clientsPlanShort')}
                   </Text>
                 </View>
               </Pressable>

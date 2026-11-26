@@ -2,6 +2,8 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { useT } from '@/providers/language-provider';
+
 /** "Gautam Pandit" → "GP". Falls back to "L5" when there is no name. */
 function initialsOf(name: string) {
   return (
@@ -22,6 +24,7 @@ export function Avatar({ name, image, size = 48 }: { name: string; image?: strin
   // Remember which address failed, so a new picture URL gets a fresh try.
   const [failed, setFailed] = useState<string | null>(null);
   const showImage = !!image && failed !== image;
+  const t = useT();
 
   return (
     <View
@@ -36,7 +39,7 @@ export function Avatar({ name, image, size = 48 }: { name: string; image?: strin
           cachePolicy="disk"
           onError={() => setFailed(image)}
           accessibilityIgnoresInvertColors
-          accessibilityLabel={`${name}'s profile picture`}
+          accessibilityLabel={t('prof.avatar.label', { name })}
         />
       ) : (
         // Sized to the circle, so the letters also fit a small picture (next to a chat message).

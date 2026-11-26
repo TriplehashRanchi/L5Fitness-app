@@ -1,4 +1,3 @@
-import { Exo2_900Black, useFonts } from '@expo-google-fonts/exo-2';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -15,29 +14,30 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DisplayText } from '@/components/display-text';
 import { Button } from '@/components/ui/button';
 import { TextField } from '@/components/ui/text-field';
 import { AuthCancelled, AuthError } from '@/lib/auth-api';
+import { splitHighlight, type Key } from '@/lib/i18n';
 import { useAuth } from '@/providers/auth-provider';
+import { useLanguage } from '@/providers/language-provider';
 
 type Mode = 'login' | 'signup';
-type Errors = Partial<Record<'name' | 'email' | 'password', string>>;
+/** What is wrong with each field, as word keys: translated when drawn, so they follow the language. */
+type Errors = Partial<Record<'name' | 'email' | 'password', Key>>;
 
 // Same palette as onboarding.
 const BRAND = '#3ddc68';
 const DIVIDER = 'rgba(255,255,255,0.12)';
-/** Wide, heavy sport display face, same as the onboarding headline. */
-const DISPLAY = 'Exo2_900Black';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MIN_PASSWORD = 8;
 
 function validate(mode: Mode, name: string, email: string, password: string): Errors {
   const errors: Errors = {};
-  if (mode === 'signup' && name.trim().length < 2) errors.name = 'Enter your full name';
-  if (!EMAIL_RE.test(email.trim())) errors.email = 'Enter a valid email address';
-  if (mode === 'signup' && password.length < MIN_PASSWORD)
-    errors.password = `Use at least ${MIN_PASSWORD} characters`;
-  if (mode === 'login' && !password) errors.password = 'Enter your password';
+  if (mode === 'signup' && name.trim().length < 2) errors.name = 'acc.nameError';
+  if (!EMAIL_RE.test(email.trim())) errors.email = 'acc.emailError';
+  if (mode === 'signup' && password.length < MIN_PASSWORD) errors.password = 'acc.passwordShort';
+  if (mode === 'login' && !password) errors.password = 'acc.passwordMissing';
   return errors;
 }
 
@@ -72,9 +72,9 @@ function AppleMark() {
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
+  const { language, t } = useLanguage();
+  const english = language === 'en';
   const { signIn, signUp, signInWithGoogle, signInWithApple } = useAuth();
-  // Never block the screen on the font: it shows right away and the headline font swaps in once loaded.
-  const [fontsLoaded] = useFonts({ Exo2_900Black });
 
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
@@ -102,8 +102,8 @@ export default function LoginScreen() {
       setBusy(null);
       // Closing the Google sheet is a change of mind, not a failure: no pop-up.
       if (e instanceof AuthCancelled) return;
-      const message = e instanceof AuthError ? e.message : 'Something went wrong. Please try again.';
-      Alert.alert(isSignup ? 'Sign up failed' : 'Login failed', message);
+      const message = e instanceof AuthError ? e.message : t('acc.wrong');
+      Alert.alert(t(isSignup ? 'acc.signUpFailed' : 'acc.loginFailed'), message);
     }
   };
 
@@ -120,7 +120,7 @@ export default function LoginScreen() {
   const onApple = () => run('apple', signInWithApple);
 
   const onForgot = () =>
-    Alert.alert('Reset password', 'Password reset will be available soon. Please contact the gym desk.');
+    Alert.alert(t('acc.resetTitle'), t('acc.resetBody'));
 
   return (
     <View className="flex-1" style={{ backgroundColor: '#050a07' }}>
@@ -153,18 +153,26 @@ export default function LoginScreen() {
           }}>
           {/* Header photo, fading into the background */}
           <View className="px-6" style={{ paddingTop: insets.top + 28 }}>
-            <Text
+            {/* The headline never waits for its font: DisplayText swaps it in once loaded. */}
+            <DisplayText
               maxFontSizeMultiplier={1.1}
-              numberOfLines={2}
+              numberOfLines={english ? 2 : 3}
               adjustsFontSizeToFit
               minimumFontScale={0.7}
-              style={fontsLoaded ? { fontFamily: DISPLAY } : { fontWeight: '900' }}
-              className="text-[40px] uppercase leading-[44px] text-white">
-              {isSignup ? 'Create your\n' : 'Welcome\n'}
-              <Text style={{ color: BRAND }}>{isSignup ? 'account.' : 'back.'}</Text>
-            </Text>
+              style={{ fontWeight: '900' }}
+              className={`uppercase text-white ${english ? 'text-[40px] leading-[44px]' : 'text-[32px] leading-[48px]'}`}>
+              {splitHighlight(t(isSignup ? 'acc.signUpTitle' : 'acc.welcomeTitle')).map((part, i) =>
+                part.highlight ? (
+                  <Text key={i} style={{ color: BRAND }}>
+                    {part.text}
+                  </Text>
+                ) : (
+                  part.text
+                )
+              )}
+            </DisplayText>
             <Text maxFontSizeMultiplier={1.3} className="mt-3 text-[15px] text-white/70">
-              {isSignup ? 'Start your fitness journey today.' : 'Log in to continue your training.'}
+              {t(isSignup ? 'acc.signUpSub' : 'acc.loginSub')}
             </Text>
           </View>
 
@@ -173,12 +181,12 @@ export default function LoginScreen() {
             <View className="gap-4">
               {isSignup ? (
                 <TextField
-                  label="Full name"
+                  label={t('acc.fullName')}
                   icon={{ ios: 'person', android: 'person', web: 'person' }}
-                  placeholder="Your name"
+                  placeholder={t('acc.yourName')}
                   value={name}
                   onChangeText={setName}
-                  error={errors.name}
+                  error={errors.name ? t(errors.name) : undefined}
                   autoComplete="name"
                   textContentType="name"
                   autoCapitalize="words"
@@ -189,12 +197,12 @@ export default function LoginScreen() {
               ) : null}
               <TextField
                 ref={emailRef}
-                label="Email"
+                label={t('acc.email')}
                 icon={{ ios: 'envelope', android: 'mail', web: 'mail' }}
-                placeholder="you@example.com"
+                placeholder="you@example.com" // i18n-ignore
                 value={email}
                 onChangeText={setEmail}
-                error={errors.email}
+                error={errors.email ? t(errors.email) : undefined}
                 keyboardType="email-address"
                 autoComplete="email"
                 textContentType={isSignup ? 'emailAddress' : 'username'}
@@ -207,12 +215,12 @@ export default function LoginScreen() {
               <TextField
                 ref={passwordRef}
                 secure
-                label="Password"
+                label={t('acc.password')}
                 icon={{ ios: 'lock', android: 'lock', web: 'lock' }}
-                placeholder={isSignup ? `Min. ${MIN_PASSWORD} characters` : 'Your password'}
+                placeholder={isSignup ? t('acc.passwordMin', { n: MIN_PASSWORD }) : t('acc.yourPassword')}
                 value={password}
                 onChangeText={setPassword}
-                error={errors.password}
+                error={errors.password ? t(errors.password, { n: MIN_PASSWORD }) : undefined}
                 autoComplete={isSignup ? 'new-password' : 'current-password'}
                 textContentType={isSignup ? 'newPassword' : 'password'}
                 autoCapitalize="none"
@@ -221,16 +229,16 @@ export default function LoginScreen() {
                 onSubmitEditing={onSubmit}
               />
               {!isSignup ? (
-                <Pressable onPress={onForgot} hitSlop={8} className="self-end active:opacity-60">
+                <Pressable onPress={onForgot} hitSlop={8} accessibilityRole="button" className="self-end active:opacity-60">
                   <Text maxFontSizeMultiplier={1.3} style={{ color: BRAND }} className="text-sm font-semibold">
-                    Forgot password?
+                    {t('acc.forgot')}
                   </Text>
                 </Pressable>
               ) : null}
             </View>
 
             <Button
-              title={isSignup ? 'Create account' : 'Log in'}
+              title={t(isSignup ? 'acc.createAccount' : 'acc.logIn')}
               onPress={onSubmit}
               loading={busy === 'email'}
               disabled={busy !== null}
@@ -240,7 +248,7 @@ export default function LoginScreen() {
             <View className="flex-row items-center gap-3">
               <View style={{ backgroundColor: DIVIDER }} className="h-px flex-1" />
               <Text maxFontSizeMultiplier={1.3} className="text-xs text-muted">
-                or continue with
+                {t('acc.orContinue')}
               </Text>
               <View style={{ backgroundColor: DIVIDER }} className="h-px flex-1" />
             </View>
@@ -251,7 +259,7 @@ export default function LoginScreen() {
                 variant="google"
                 title="Google"
                 className="flex-1"
-                accessibilityLabel="Continue with Google"
+                accessibilityLabel={t('acc.continueGoogle')}
                 left={<GoogleMark />}
                 onPress={onGoogle}
                 loading={busy === 'google'}
@@ -261,7 +269,7 @@ export default function LoginScreen() {
                 variant="apple"
                 title="Apple"
                 className="flex-1"
-                accessibilityLabel="Continue with Apple"
+                accessibilityLabel={t('acc.continueApple')}
                 left={<AppleMark />}
                 onPress={onApple}
                 loading={busy === 'apple'}
@@ -271,10 +279,10 @@ export default function LoginScreen() {
 
             <View className="mt-auto flex-row flex-wrap justify-center pt-2">
               <Text className="text-sm text-muted">
-                {isSignup ? 'Already a member? ' : 'New to L5 Fitness? '}
+                {t(isSignup ? 'acc.alreadyMember' : 'acc.newHere')}{' '}
               </Text>
-              <Pressable onPress={() => switchMode(isSignup ? 'login' : 'signup')} hitSlop={8}>
-                <Text style={{ color: BRAND }} className="text-sm font-bold">{isSignup ? 'Log in' : 'Sign up'}</Text>
+              <Pressable onPress={() => switchMode(isSignup ? 'login' : 'signup')} hitSlop={8} accessibilityRole="button">
+                <Text style={{ color: BRAND }} className="text-sm font-bold">{t(isSignup ? 'acc.logIn' : 'acc.signUp')}</Text>
               </Pressable>
             </View>
           </View>

@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import type { WaterToday } from '@/lib/fitness-api';
 import { formatWater, waterPercent, WATER_PRESETS_ML } from '@/lib/water';
+import { useLanguage } from '@/providers/language-provider';
 
 const WATER = '#38bdf8';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -20,6 +21,8 @@ export function WaterCard({
   onAdd: (ml: number) => void;
   onUndo: () => void;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   if (!water) return <View className="mx-5 mb-5 h-44 rounded-3xl border border-white/5 bg-card" accessibilityElementsHidden />;
 
   const percent = waterPercent(water.totalMl, water.goalMl);
@@ -34,13 +37,13 @@ export function WaterCard({
             tintColor={WATER}
             size={18}
           />
-          <Text {...COMPACT_TEXT} className="text-xs font-bold uppercase tracking-[1px] text-muted">
-            Water
+          <Text {...COMPACT_TEXT} className={`text-xs font-bold uppercase text-muted ${indic ? '' : 'tracking-[1px]'}`}>
+            {t('hm.water')}
           </Text>
         </View>
         <View className={`rounded-full px-3 py-1 ${goalMet ? 'bg-sky-400' : 'bg-card-2'}`}>
           <Text {...COMPACT_TEXT} className={`text-xs font-bold ${goalMet ? 'text-ink' : 'text-sky-400'}`}>
-            {goalMet ? 'Goal reached' : `${percent}%`}
+            {goalMet ? t('hm.goalReached') : `${percent}%`}
           </Text>
         </View>
       </View>
@@ -48,13 +51,13 @@ export function WaterCard({
       <View className="mt-3 flex-row items-baseline gap-2">
         <Text
           {...COMPACT_TEXT}
-          accessibilityLabel={`${formatWater(water.totalMl)} of ${formatWater(water.goalMl)}`}
+          accessibilityLabel={t('hm.xOfY', { done: formatWater(water.totalMl), total: formatWater(water.goalMl) })}
           style={{ fontSize: 30, lineHeight: 38 }}
           className="font-bold text-white">
           {formatWater(water.totalMl)}
         </Text>
         <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted">
-          of {formatWater(water.goalMl)}
+          {t('hm.ofGoal', { goal: formatWater(water.goalMl) })}
         </Text>
       </View>
 
@@ -73,7 +76,7 @@ export function WaterCard({
             onPress={() => onAdd(ml)}
             disabled={busy}
             accessibilityRole="button"
-            accessibilityLabel={`Add ${ml} millilitres of water`}
+            accessibilityLabel={t('hm.addWaterA11y', { ml })}
             className="flex-1 items-center rounded-full bg-card-2 py-2.5 active:opacity-70">
             <Text {...COMPACT_TEXT} className="text-xs font-semibold text-sky-400">
               +{ml} ml
@@ -89,10 +92,10 @@ export function WaterCard({
             onPress={onUndo}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="Undo the last drink"
+            accessibilityLabel={t('hm.undoLast')}
             className="w-14 items-center py-2.5 active:opacity-60">
-            <Text {...COMPACT_TEXT} className="text-sm font-semibold text-muted">
-              Undo
+            <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-sm font-semibold text-muted">
+              {t('hm.undo')}
             </Text>
           </Pressable>
         ) : (

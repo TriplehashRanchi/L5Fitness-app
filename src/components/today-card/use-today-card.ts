@@ -2,6 +2,7 @@ import { useCallback, useState, type Dispatch, type SetStateAction } from 'react
 
 import { putSteps, type DayItem, type Home } from '@/lib/fitness-api';
 import { messageFrom } from '@/lib/http';
+import { tr } from '@/lib/i18n';
 import { SLOT_ORDER, tickItem, untickItem } from '@/lib/wellness-api';
 
 export const MAX_STEPS = 200_000;
@@ -35,7 +36,7 @@ export function useTodayCard(setData: Dispatch<SetStateAction<Home | null>>, tod
         await (next ? tickItem(item.id) : untickItem(item.id));
       } catch (e) {
         setItem(item.id, item.done);
-        setDietError(`Could not save “${item.title}”. ${messageFrom(e)}`);
+        setDietError(tr('hm.saveItemFailed', { title: item.title, reason: messageFrom(e) }));
       } finally {
         setPending((p) => {
           const n = new Set(p);
@@ -52,7 +53,7 @@ export function useTodayCard(setData: Dispatch<SetStateAction<Home | null>>, tod
     async (text: string) => {
       const n = Number(text.replace(/[\s,]/g, ''));
       if (!text.trim() || !Number.isInteger(n) || n < 0 || n > MAX_STEPS) {
-        setStepsError(`Enter a whole number from 0 to ${MAX_STEPS.toLocaleString('en')}.`);
+        setStepsError(tr('hm.stepsRange', { max: MAX_STEPS.toLocaleString('en') }));
         return false;
       }
       setStepsError(null);

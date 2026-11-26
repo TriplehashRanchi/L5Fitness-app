@@ -2,6 +2,7 @@ import { Text, View } from 'react-native';
 
 import { fmtKg } from '@/lib/body';
 import type { WeightEntry } from '@/lib/wellness-api';
+import { useT } from '@/providers/language-provider';
 
 const CHART_HEIGHT = 80;
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -9,10 +10,11 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 /** The last few weigh-ins as bars, oldest on the left. The bars start near the lowest weight so changes are visible. */
 export function WeightBars({ history, max = 8 }: { history: WeightEntry[]; max?: number }) {
   const entries = history.slice(0, max).reverse(); // newest first → oldest first
+  const t = useT();
   if (entries.length < 2) {
     return (
       <Text {...COMPACT_TEXT} className="text-sm text-muted">
-        Log your weight a few times to see your progress here.
+        {t('prof.bars.empty')}
       </Text>
     );
   }

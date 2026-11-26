@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GREEN_BG, GreenBackground } from '@/components/green-background';
 import { ProfileForm } from '@/components/profile-form';
+import { useT } from '@/providers/language-provider';
 
 /**
  * The same one-question-at-a-time profile steps as right after the first login, opened later from a
@@ -13,12 +14,13 @@ import { ProfileForm } from '@/components/profile-form';
 export default function CompleteProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const t = useT();
   return (
     <View className="flex-1" style={{ backgroundColor: GREEN_BG }}>
       <StatusBar style="light" />
       <GreenBackground />
       <View className="flex-1" style={{ paddingTop: insets.top + 8 }}>
-        <ProfileForm mode="setup" onDone={() => router.back()} onSkip={() => router.back()} skipLabel="Close" />
+        <ProfileForm mode="setup" onDone={() => router.back()} onSkip={() => router.back()} skipLabel={t('common.close')} />
       </View>
     </View>
   );

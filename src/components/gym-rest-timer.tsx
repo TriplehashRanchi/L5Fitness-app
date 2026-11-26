@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { SymbolView } from 'expo-symbols';
 import { Platform, Pressable, Text, Vibration, View } from 'react-native';
 import { DisplayText } from '@/components/display-text';
+import { useLanguage } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -10,6 +11,7 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const PRESETS = [30, 45, 60, 90, 120];
 
 export function GymRestTimer() {
+  const { t, language } = useLanguage();
   const [totalSeconds, setTotalSeconds] = useState(60);
   const [remaining, setRemaining] = useState(60);
   const [isRunning, setIsRunning] = useState(false);
@@ -99,6 +101,9 @@ export function GymRestTimer() {
       <View className="flex-row items-center justify-between">
         <Pressable
           onPress={() => setIsExpanded((prev) => !prev)}
+          accessibilityRole="button"
+          accessibilityLabel={t('act.restTimerA11y')}
+          accessibilityState={{ expanded: isExpanded }}
           className="flex-1 flex-row items-center gap-2.5 active:opacity-70">
           <View className="h-8 w-8 items-center justify-center rounded-xl bg-card-2">
             <SymbolView
@@ -107,28 +112,28 @@ export function GymRestTimer() {
               size={18}
             />
           </View>
-          <View>
-            <View className="flex-row items-center gap-2">
-              <Text className="text-sm font-semibold tracking-wide text-white">
-                Rest Timer
+          <View className="shrink">
+            <View className="flex-row flex-wrap items-center gap-2">
+              <Text className={`text-sm font-semibold text-white ${language === 'en' ? 'tracking-wide' : ''}`}>
+                {t('act.restTimer')}
               </Text>
               {isRunning ? (
                 <View className="flex-row items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5">
                   <View className="h-1.5 w-1.5 rounded-full bg-brand" />
                   <Text {...COMPACT_TEXT} className="text-[10px] font-semibold text-brand">
-                    Active
+                    {t('act.active')}
                   </Text>
                 </View>
               ) : isDone ? (
                 <View className="flex-row items-center gap-1 rounded-full bg-brand/15 px-2 py-0.5">
                   <Text {...COMPACT_TEXT} className="text-[10px] font-semibold text-brand">
-                    Complete
+                    {t('act.complete')}
                   </Text>
                 </View>
               ) : null}
             </View>
             <Text {...COMPACT_TEXT} className="text-xs text-muted">
-              {isRunning ? `${remaining}s remaining` : 'Interval between sets'}
+              {isRunning ? t('act.secondsRemaining', { n: remaining }) : t('act.betweenSets')}
             </Text>
           </View>
         </Pressable>
@@ -136,6 +141,8 @@ export function GymRestTimer() {
         <Pressable
           onPress={() => setIsExpanded((prev) => !prev)}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t(isExpanded ? 'act.hideRestTimer' : 'act.showRestTimer')}
           className="h-8 w-8 items-center justify-center rounded-full bg-card-2 active:opacity-70">
           <SymbolView
             name={
@@ -161,7 +168,7 @@ export function GymRestTimer() {
               {timeDisplay}
             </DisplayText>
             <Text {...COMPACT_TEXT} className="mt-1 text-xs text-muted">
-              {isDone ? 'Rest interval complete' : isRunning ? 'Rest in progress' : 'Select interval'}
+              {t(isDone ? 'act.restComplete' : isRunning ? 'act.restRunning' : 'act.selectInterval')}
             </Text>
           </View>
 
@@ -182,14 +189,16 @@ export function GymRestTimer() {
                   key={secs}
                   onPress={() => selectPreset(secs)}
                   accessibilityRole="button"
-                  accessibilityLabel={`${secs} seconds rest`}
+                  accessibilityLabel={t('act.secondsRestA11y', { n: secs })}
                   className={`flex-1 items-center rounded-xl py-2 active:opacity-70 ${
                     selected ? 'bg-brand/20 border border-brand/50' : 'bg-card-2 border border-white/5'
                   }`}>
                   <Text
                     {...COMPACT_TEXT}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
                     className={`text-xs font-bold ${selected ? 'text-brand' : 'text-muted'}`}>
-                    {secs}s
+                    {t('act.secondsShort', { n: secs })}
                   </Text>
                 </Pressable>
               );
@@ -197,13 +206,13 @@ export function GymRestTimer() {
           </View>
 
           {/* Control buttons */}
-          <View className="flex-row items-center justify-center gap-3 mt-4">
+          <View className="flex-row flex-wrap items-center justify-center gap-3 mt-4">
             <Pressable
               onPress={() => addTime(15)}
               accessibilityRole="button"
               className="items-center rounded-full border border-white/10 bg-card-2 px-4 py-2.5 active:opacity-70">
               <Text {...COMPACT_TEXT} className="text-xs font-bold text-muted">
-                +15s
+                {t('act.addSeconds', { n: 15 })}
               </Text>
             </Pressable>
 
@@ -227,7 +236,7 @@ export function GymRestTimer() {
               <Text
                 {...COMPACT_TEXT}
                 className={`text-sm font-bold ${isDone ? 'text-white' : isRunning ? 'text-white' : 'text-ink'}`}>
-                {isDone ? 'Restart' : isRunning ? 'Pause' : 'Start'}
+                {t(isDone ? 'act.restart' : isRunning ? 'act.pause' : 'home.start')}
               </Text>
             </Pressable>
 
@@ -236,31 +245,34 @@ export function GymRestTimer() {
               accessibilityRole="button"
               className="items-center rounded-full border border-white/10 bg-card-2 px-4 py-2.5 active:opacity-70">
               <Text {...COMPACT_TEXT} className="text-xs font-bold text-muted">
-                Reset
+                {t('act.reset')}
               </Text>
             </Pressable>
           </View>
         </View>
       ) : (
         /* Compact bar when collapsed */
-        <View className="mt-3 flex-row items-center justify-between gap-2 border-t border-white/5 pt-3">
+        <View className="mt-3 flex-row flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-3">
           <View className="flex-row gap-2">
             {[30, 60, 90].map((s) => (
               <Pressable
                 key={s}
                 onPress={() => selectPreset(s)}
+                accessibilityRole="button"
+                accessibilityLabel={t('act.secondsA11y', { n: s })}
                 className="rounded-lg bg-card-2 px-3 py-1.5 active:opacity-70">
                 <Text {...COMPACT_TEXT} className="text-xs font-semibold text-brand">
-                  {s}s
+                  {t('act.secondsShort', { n: s })}
                 </Text>
               </Pressable>
             ))}
           </View>
           <Pressable
             onPress={() => setIsExpanded(true)}
+            accessibilityRole="button"
             className="flex-row items-center gap-1.5 rounded-full bg-brand/10 px-3 py-1.5 active:opacity-70">
             <Text {...COMPACT_TEXT} className="text-xs font-bold text-brand">
-              Open Timer
+              {t('act.openTimer')}
             </Text>
             <SymbolView
               name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }}

@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import { DisplayText } from '@/components/display-text';
 import { monthYear, WeekArrows } from '@/components/home-header';
 import { addDays, formatWeekday, getWeekDays, isSameDay, toDayKey, type CalendarDay } from '@/lib/datetime';
+import { useT } from '@/providers/language-provider';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -23,6 +24,7 @@ export function WeekPicker({
   /** Days (YYYY-MM-DD) that get a small dot: the ones with a logged workout. */
   marked?: ReadonlySet<string>;
 }) {
+  const t = useT();
   const days = getWeekDays(selected, firstWeekday);
   return (
     <View className="px-5">
@@ -37,13 +39,20 @@ export function WeekPicker({
           const isSel = isSameDay(d, selected);
           const isToday = isSameDay(d, today);
           const hasDot = marked?.has(toDayKey(d)) ?? false;
+          const dayName = `${formatWeekday(d, locale, 'long')} ${d.day}`;
           return (
             <Pressable
               key={`${d.year}-${d.month}-${d.day}`}
               onPress={() => onSelect(d)}
               accessibilityRole="button"
               accessibilityState={{ selected: isSel }}
-              accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${isToday ? ', today' : ''}${hasDot ? ', workout logged' : ''}`}
+              accessibilityLabel={
+                isToday
+                  ? t(hasDot ? 'act.pickTodayLoggedA11y' : 'act.pickTodayA11y', { day: dayName })
+                  : hasDot
+                    ? t('act.pickLoggedA11y', { day: dayName })
+                    : dayName
+              }
               className="min-h-[44px] flex-1 items-center gap-2">
               <Text {...COMPACT_TEXT} className={`text-sm font-semibold ${isSel ? 'text-white' : 'text-muted'}`}>
                 {formatWeekday(d, locale, 'narrow')}

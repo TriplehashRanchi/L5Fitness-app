@@ -12,6 +12,7 @@ import { WorkoutBlock } from '@/components/today-card/workout-block';
 import { toDayKey, type CalendarDay } from '@/lib/datetime';
 import { SHOW_WORKOUT } from '@/lib/features';
 import type { Home } from '@/lib/fitness-api';
+import { useLanguage } from '@/providers/language-provider';
 
 export { SHOW_WORKOUT };
 
@@ -53,6 +54,8 @@ export function TodayPlanCard({
   liveWorkout?: ReactNode;
   onStartWorkout: () => void;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const todayKey = toDayKey(today);
   const card = useTodayCard(setData, todayKey);
   const progress = todayProgress(data, null);
@@ -62,8 +65,8 @@ export function TodayPlanCard({
   return (
     <View className="mx-5 mb-5" style={{ paddingTop: 8, paddingBottom: 4 }}>
       <View className="flex-row items-center gap-3">
-        <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="flex-1 text-[22px] leading-7 tracking-tight text-white">
-          Today’s plan
+        <DisplayText {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit className="flex-1 text-[22px] leading-7 tracking-tight text-white" style={indic ? { fontSize: 19, lineHeight: 27 } : undefined}>
+          {t('hm.todayPlan')}
         </DisplayText>
         <Text {...COMPACT_TEXT} numberOfLines={1} className="text-sm text-muted">
           {dateLabel}
@@ -73,11 +76,11 @@ export function TodayPlanCard({
           onPress={() => router.push('/today-plan' as never)}
           hitSlop={8}
           accessibilityRole="link"
-          accessibilityLabel="See full plan"
+          accessibilityLabel={t('hm.seeFullPlan')}
           className="flex-row items-center rounded-full bg-brand active:opacity-80"
           style={{ gap: 4, minHeight: 34, paddingLeft: 12, paddingRight: 9 }}>
           <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[13px] font-black text-ink">
-            Full plan
+            {t('hm.fullPlan')}
           </Text>
           <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor="#050a07" size={11} />
         </Pressable>

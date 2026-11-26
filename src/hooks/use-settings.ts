@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getSettings, updateSettings, type Prescribed, type Settings } from '@/lib/fitness-api';
 import { ApiError, messageFrom } from '@/lib/http';
+import { tr } from '@/lib/i18n';
 
 /**
  * The member's goals. A change shows on screen straight away and is saved to the server half a
@@ -48,7 +49,7 @@ export function useSettings() {
       setError(null);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TARGET_SET_BY_DIETITIAN') {
-        setError('That goal is set by your dietitian, so you cannot change it.');
+        setError(tr('acc.goalLocked'));
         // Re-read, so the screen shows the dietitian's values as read-only.
         getSettings()
           .then((r) => {

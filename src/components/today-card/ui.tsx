@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 
+import { useLanguage } from '@/providers/language-provider';
+
 export const BRAND = '#3ddc68';
 export const INK = '#050a07';
 export const MUTED = '#8fa396';
@@ -111,6 +113,8 @@ export function PillButton({
   small?: boolean;
 }) {
   const off = busy || disabled;
+  // Longer words in the other languages shrink to fit the pill.
+  const indic = useLanguage().language !== 'en';
   return (
     <Pressable
       onPress={onPress}
@@ -125,7 +129,7 @@ export function PillButton({
       ) : (
         <>
           {icon ? <SymbolView name={icon} tintColor={primary ? INK : BRAND} size={small ? 12 : 15} /> : null}
-          <Text {...COMPACT_TEXT} className={`${small ? 'text-xs' : 'text-sm'} font-bold ${primary ? 'text-ink' : 'text-white'}`} numberOfLines={1}>
+          <Text {...COMPACT_TEXT} className={`${small ? 'text-xs' : 'text-sm'} font-bold ${primary ? 'text-ink' : 'text-white'} ${indic ? 'shrink text-center' : ''}`} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit={indic}>
             {label}
           </Text>
         </>

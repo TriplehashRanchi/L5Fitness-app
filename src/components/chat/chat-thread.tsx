@@ -4,12 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { ActivityIndicator, AppState, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
+import { EmergencySheet } from '@/components/emergency-sheet';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import { useForegroundReload } from '@/hooks/use-foreground-reload';
 import { newMessageId, type ChatMessage, type LoadChat, type SendChat } from '@/lib/chat-api';
+import { urgencyOf, type Urgency } from '@/lib/emergency';
 import { dayLabel, formatTime, getZonedParts, toDayKey } from '@/lib/datetime';
 import { ApiError, messageFrom } from '@/lib/http';
+import type { Translate } from '@/lib/i18n';
 import { acquireSocket, releaseSocket } from '@/lib/realtime';
+import { useLanguage } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -50,15 +54,16 @@ const byTime = (x: ChatMessage, y: ChatMessage) => (x.createdAt < y.createdAt ? 
 const passing = (e: unknown) => !(e instanceof ApiError) || e.status >= 500 || e.status === 429;
 
 /** "Online", "typing…", "Last seen 5 min ago", or what the screen says when it knows nothing. */
-export function statusLine(status: ChatStatus, fallback: string) {
-  if (status.typing) return 'typing…';
-  if (status.online) return 'Online';
+export function statusLine(status: ChatStatus, fallback: string, t: Translate) {
+  if (status.typing) return t('care.chatTypingNow');
+  if (status.online) return t('care.chatOnline');
   if (!status.lastSeenAt) return fallback;
   const minutes = Math.max(0, (Date.now() - new Date(status.lastSeenAt).getTime()) / 60_000);
-  if (minutes < 1.5) return 'Last seen just now';
-  if (minutes < 60) return `Last seen ${Math.round(minutes)} min ago`;
-  if (minutes < 60 * 24) return `Last seen ${Math.round(minutes / 60)} h ago`;
-  return `Last seen ${Math.round(minutes / 1440)} days ago`;
+  if (minutes < 1.5) return t('care.chatLastSeenNow');
+  if (minutes < 60) return t('care.chatLastSeenMin', { n: Math.round(minutes) });
+  if (minutes < 60 * 24) return t('care.chatLastSeenHour', { n: Math.round(minutes / 60) });
+  const days = Math.round(minutes / 1440);
+  return t(days === 1 ? 'care.chatLastSeenDay' : 'care.chatLastSeenDays', { n: days });
 }
 
 /**
@@ -80,6 +85,7 @@ export function ChatThread({
   bottomInset,
   emptyTitle,
   emptyText,
+  watchUrgent = false,
 }: {
   /** Stays at the top, above the messages. It is told whether the other person is online or writing. */
   header: (status: ChatStatus) => ReactNode;
@@ -92,8 +98,11 @@ export function ChatThread({
   bottomInset: number;
   emptyTitle: string;
   emptyText: string;
+  /** A member writing to their dietitian: urgent words open the emergency box, because nobody may read it in time. */
+  watchUrgent?: boolean;
 }) {
   const { now, format } = useDeviceClock();
+  const { t, language } = useLanguage();
   const todayKey = toDayKey(getZonedParts(now, format.timeZone));
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -102,6 +111,7 @@ export function ChatThread({
   const [hasMore, setHasMore] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [urgent, setUrgent] = useState<Urgency | null>(null);
   const [text, setText] = useState('');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -363,6 +373,7 @@ export function ChatThread({
   const submit = () => {
     const body = text.trim();
     if (!body) return;
+    if (watchUrgent) setUrgent(urgencyOf(body));
     const item: Pending = { clientId: newMessageId(), body, createdAt: new Date().toISOString(), state: 'sending' };
     typing('');
     setError(null);
@@ -412,7 +423,7 @@ export function ChatThread({
 
       {lost && messages !== null ? (
         <Text {...COMPACT_TEXT} accessibilityLiveRegion="polite" className="px-5 py-2 text-center text-xs font-semibold" style={{ color: WARN, backgroundColor: 'rgba(255,200,87,0.1)' }}>
-          No connection. Anything you write is sent as soon as it is back.
+          {t('care.chatNoConnection')}
         </Text>
       ) : null}
 
@@ -425,7 +436,7 @@ export function ChatThread({
               </Text>
               <Pressable onPress={refresh} accessibilityRole="button" className="mt-4 min-h-11 justify-center rounded-full bg-brand px-6 active:opacity-80">
                 <Text {...COMPACT_TEXT} className="text-sm font-bold text-ink">
-                  Try again
+                  {t('common.tryAgain')}
                 </Text>
               </Pressable>
             </>
@@ -463,11 +474,11 @@ export function ChatThread({
           ListFooterComponent={loadingOlder ? <ActivityIndicator color={BRAND} style={{ marginVertical: 12 }} /> : undefined}
           ListHeaderComponent={
             theyType ? (
-              <View accessible accessibilityLiveRegion="polite" accessibilityLabel={`${peer?.name ?? 'They'} is typing`} className="flex-row items-end" style={{ gap: 8, marginBottom: 10 }}>
+              <View accessible accessibilityLiveRegion="polite" accessibilityLabel={peer ? t('care.chatNameTyping', { name: peer.name }) : t('care.chatTheyTyping')} className="flex-row items-end" style={{ gap: 8, marginBottom: 10 }}>
                 {peer ? <Avatar name={peer.name} image={peer.image} size={PEER_AVATAR} /> : null}
                 <View style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, borderBottomLeftRadius: 6, backgroundColor: 'rgba(255,255,255,0.09)' }}>
                   <Text {...COMPACT_TEXT} style={{ fontSize: 15, lineHeight: 22, color: MUTED, fontStyle: 'italic' }}>
-                    typing…
+                    {t('care.chatTypingNow')}
                   </Text>
                 </View>
               </View>
@@ -486,7 +497,7 @@ export function ChatThread({
             return (
               <View>
                 {startsDay ? (
-                  <Text {...COMPACT_TEXT} className="my-3 text-center text-[11px] font-bold uppercase tracking-widest text-muted">
+                  <Text {...COMPACT_TEXT} className={`my-3 text-center text-[11px] font-bold uppercase text-muted ${language === 'en' ? 'tracking-widest' : ''}`}>
                     {dayLabel(day, todayKey, format.locale)}
                   </Text>
                 ) : null}
@@ -498,7 +509,7 @@ export function ChatThread({
                   <View className={`flex-1 ${item.mine ? 'items-end' : 'items-start'}`}>
                     <View
                       accessible
-                      accessibilityLabel={`${item.mine ? 'You' : 'They'} wrote: ${item.body}`}
+                      accessibilityLabel={t(item.mine ? 'care.chatYouWrote' : 'care.chatTheyWrote', { text: item.body })}
                       style={{
                         maxWidth: '82%',
                         paddingHorizontal: 14,
@@ -514,15 +525,15 @@ export function ChatThread({
                       </Text>
                     </View>
                     {item.state === 'failed' ? (
-                      <Pressable onPress={() => retry(item.id)} accessibilityRole="button" accessibilityLabel="Not sent. Try again" className="min-h-8 justify-center active:opacity-60">
+                      <Pressable onPress={() => retry(item.id)} accessibilityRole="button" accessibilityLabel={t('care.chatNotSentA11y')} className="min-h-8 justify-center active:opacity-60">
                         <Text {...COMPACT_TEXT} className="text-xs font-bold" style={{ color: BAD }}>
-                          {refused ? `Not sent: ${messageFrom(item.reason)} Tap to try again` : 'Not sent · Tap to try again'}
+                          {refused ? t('care.chatRefused', { reason: messageFrom(item.reason) }) : t('care.chatNotSent')}
                         </Text>
                       </Pressable>
                     ) : endsRun ? (
                       <Text {...COMPACT_TEXT} className="mt-1 text-[11px] text-muted" style={{ marginHorizontal: 6 }}>
-                        {item.state === 'waiting' ? 'Waiting for connection…' : item.state === 'sending' ? 'Sending…' : formatTime(new Date(item.createdAt), format)}
-                        {item.mine && !item.state ? <Text style={{ color: seen ? BRAND : MUTED, fontWeight: seen ? '700' : '400' }}>{seen ? ' · Seen' : ' · Sent'}</Text> : null}
+                        {item.state === 'waiting' ? t('care.chatWaiting') : item.state === 'sending' ? t('care.chatSending') : formatTime(new Date(item.createdAt), format)}
+                        {item.mine && !item.state ? <Text style={{ color: seen ? BRAND : MUTED, fontWeight: seen ? '700' : '400' }}>{` · ${seen ? t('care.chatSeen') : t('care.chatSent')}`}</Text> : null}
                       </Text>
                     ) : null}
                   </View>
@@ -547,8 +558,8 @@ export function ChatThread({
               onChangeText={typing}
               multiline
               maxLength={MAX_LENGTH}
-              accessibilityLabel="Message"
-              placeholder="Message"
+              accessibilityLabel={t('care.chatMessage')}
+              placeholder={t('care.chatMessage')}
               placeholderTextColor={MUTED}
               selectionColor={BRAND}
               cursorColor={BRAND}
@@ -560,7 +571,7 @@ export function ChatThread({
             onPress={submit}
             disabled={!canSend}
             accessibilityRole="button"
-            accessibilityLabel="Send"
+            accessibilityLabel={t('care.send')}
             accessibilityState={{ disabled: !canSend }}
             className="items-center justify-center active:opacity-80"
             style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: canSend ? BRAND : 'rgba(255,255,255,0.08)' }}>
@@ -568,6 +579,7 @@ export function ChatThread({
           </Pressable>
         </View>
       </View>
+      <EmergencySheet kind={urgent} onClose={() => setUrgent(null)} />
     </KeyboardAvoidingView>
   );
 }

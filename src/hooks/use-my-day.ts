@@ -102,8 +102,11 @@ export function useMyDay(day: string) {
     setWaterTotal((t) => t + ml);
     try {
       const water = await addWater(ml, day);
-      setWaterTotal(() => water.totalMl);
-      setLastWater(water.lastId ? { id: water.lastId, ml, day } : null);
+      // null: no signal, kept on the phone to send later. What is shown stays, and there is nothing to undo yet.
+      if (water) {
+        setWaterTotal(() => water.totalMl);
+        setLastWater(water.lastId ? { id: water.lastId, ml, day } : null);
+      } else setLastWater(null);
     } catch (e) {
       setWaterTotal((t) => t - ml);
       patch({ notice: messageFrom(e) });

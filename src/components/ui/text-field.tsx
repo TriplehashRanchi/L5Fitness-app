@@ -9,6 +9,8 @@ import {
   type TextInputProps,
 } from 'react-native';
 
+import { useT } from '@/providers/language-provider';
+
 type Props = TextInputProps & {
   label: string;
   icon: SymbolViewProps['name'];
@@ -21,6 +23,7 @@ type Props = TextInputProps & {
 export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ...input }: Props) {
   const [focused, setFocused] = useState(false);
   const [hidden, setHidden] = useState(true);
+  const t = useT();
 
   const border = error ? 'border-red-400' : focused ? 'border-[#3ddc68]' : 'border-[#78ffa0]/20';
 
@@ -53,7 +56,7 @@ export function TextField({ label, icon, error, secure, ref, onFocus, onBlur, ..
           <Pressable
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel={hidden ? 'Show password' : 'Hide password'}
+            accessibilityLabel={t(hidden ? 'prof.password.show' : 'prof.password.hide')}
             onPress={() => setHidden((h) => !h)}>
             <SymbolView
               name={

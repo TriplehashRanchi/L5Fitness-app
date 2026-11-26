@@ -6,7 +6,8 @@ import { Pressable, Text, View } from 'react-native';
 
 import { ConfirmSheet } from '@/components/confirm-sheet';
 import { formatTime, type FormatOptions } from '@/lib/datetime';
-import { MEAL_LABEL, type Meal } from '@/lib/fitness-api';
+import { type Meal } from '@/lib/fitness-api';
+import { useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const MUTED = '#8fa396';
@@ -25,6 +26,7 @@ export function MealsSection({
   onDelete: (id: string) => Promise<void>;
 }) {
   const router = useRouter();
+  const t = useT();
   const [toDelete, setToDelete] = useState<Meal | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -42,18 +44,18 @@ export function MealsSection({
   return (
     <View className="mt-8">
       <View className="mb-4 flex-row items-center justify-between gap-3 px-5">
-        <Text className="flex-1 text-xl font-bold text-white" numberOfLines={1}>
-          Meals today
+        <Text className="flex-1 text-xl font-bold text-white" numberOfLines={2}>
+          {t('acc.mealsToday')}
         </Text>
         <Pressable
           onPress={() => router.push('/add-meal')}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="Add a meal"
+          accessibilityLabel={t('acc.addAMeal')}
           className="flex-row items-center gap-1.5 rounded-full bg-brand px-4 py-2 active:opacity-80">
           <SymbolView name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }} tintColor="#050a07" size={14} />
           <Text {...COMPACT_TEXT} className="text-xs font-bold text-ink">
-            Add meal
+            {t('meal.title')}
           </Text>
         </Pressable>
       </View>
@@ -67,8 +69,8 @@ export function MealsSection({
             accessibilityRole="button"
             className="items-center rounded-2xl border border-white/10 bg-card px-6 py-8 active:opacity-80">
             <SymbolView name={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }} tintColor={BRAND} size={26} />
-            <Text className="mt-3 text-base font-bold text-white">No meals logged yet</Text>
-            <Text className="mt-1 text-center text-sm text-muted">Snap a photo of your meal to keep track of what you eat.</Text>
+            <Text className="mt-3 text-center text-base font-bold text-white">{t('acc.noMeals')}</Text>
+            <Text className="mt-1 text-center text-sm text-muted">{t('acc.noMealsSub')}</Text>
           </Pressable>
         ) : (
           meals.map((meal) => (
@@ -83,7 +85,7 @@ export function MealsSection({
                     // The link changes on every load, so cache by the meal, not by the address.
                     cachePolicy="memory-disk"
                     recyclingKey={meal.id}
-                    accessibilityLabel={`Photo of ${MEAL_LABEL[meal.mealType].toLowerCase()}`}
+                    accessibilityLabel={t(`meal.${meal.mealType}`)}
                     accessibilityIgnoresInvertColors
                   />
                 ) : (
@@ -92,7 +94,7 @@ export function MealsSection({
               </View>
               <View className="flex-1">
                 <Text className="text-base font-bold text-white" numberOfLines={1}>
-                  {MEAL_LABEL[meal.mealType]}
+                  {t(`meal.${meal.mealType}`)}
                 </Text>
                 <Text {...COMPACT_TEXT} className="text-xs text-muted" numberOfLines={1}>
                   {formatTime(new Date(meal.eatenAt), format)}
@@ -102,12 +104,17 @@ export function MealsSection({
                     {meal.note}
                   </Text>
                 ) : null}
+                {meal.kcalMin != null && meal.kcalMax != null ? (
+                  <Text {...COMPACT_TEXT} className="mt-0.5 text-xs text-muted" numberOfLines={2}>
+                    {t('meal.estimate', { min: meal.kcalMin, max: meal.kcalMax })}
+                  </Text>
+                ) : null}
               </View>
               <Pressable
                 onPress={() => setToDelete(meal)}
                 hitSlop={10}
                 accessibilityRole="button"
-                accessibilityLabel={`Delete ${MEAL_LABEL[meal.mealType].toLowerCase()}`}
+                accessibilityLabel={t('acc.removeItem', { name: t(`meal.${meal.mealType}`) })}
                 className="h-10 w-10 items-center justify-center rounded-full active:bg-card-2">
                 <SymbolView name={{ ios: 'trash', android: 'delete', web: 'delete' }} tintColor={MUTED} size={18} />
               </Pressable>
@@ -118,9 +125,9 @@ export function MealsSection({
 
       <ConfirmSheet
         visible={toDelete !== null}
-        title="Delete this meal?"
-        message="The meal and its photo will be removed. This cannot be undone."
-        confirmLabel="Delete"
+        title={t('acc.deleteMealTitle')}
+        message={t('acc.deleteMealBody')}
+        confirmLabel={t('acc.delete')}
         destructive
         busy={deleting}
         onConfirm={confirmDelete}

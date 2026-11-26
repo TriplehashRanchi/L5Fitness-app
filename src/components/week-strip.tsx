@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { formatWeekday, toDayKey, type CalendarDay } from '@/lib/datetime';
 import type { WeekDay } from '@/lib/wellness-api';
+import { useT } from '@/providers/language-provider';
 
 const INK = '#050a07';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -26,6 +27,7 @@ export function WeekStrip({
   locale: string;
   onSelect: (key: string) => void;
 }) {
+  const t = useT();
   return (
     <View className="flex-row gap-1.5">
       {days.map((d) => {
@@ -40,11 +42,13 @@ export function WeekStrip({
             onPress={() => onSelect(key)}
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
-            accessibilityLabel={`${formatWeekday(d, locale, 'long')} ${d.day}${
-              planned ? `, ${info!.done} of ${info!.total} done` : ', nothing planned'
-            }`}
+            accessibilityLabel={
+              planned
+                ? t('act.weekDoneA11y', { day: `${formatWeekday(d, locale, 'long')} ${d.day}`, done: info!.done, total: info!.total })
+                : t('act.weekNothingA11y', { day: `${formatWeekday(d, locale, 'long')} ${d.day}` })
+            }
             className={`flex-1 items-center gap-1.5 rounded-2xl py-2.5 ${isSelected ? 'bg-brand' : 'bg-card'}`}>
-            <Text {...COMPACT_TEXT} className={`text-[11px] font-semibold ${isSelected ? 'text-ink' : 'text-muted'}`}>
+            <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className={`text-[11px] font-semibold ${isSelected ? 'text-ink' : 'text-muted'}`}>
               {formatWeekday(d, locale, 'short')}
             </Text>
             <Text {...COMPACT_TEXT} className={`text-base font-black ${isSelected ? 'text-ink' : key === todayKey ? 'text-brand' : 'text-white'}`}>

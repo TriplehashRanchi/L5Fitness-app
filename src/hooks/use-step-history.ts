@@ -5,7 +5,8 @@ import { addDays, toDayKey, type CalendarDay } from '@/lib/datetime';
 import { getStepHistory, putSteps } from '@/lib/fitness-api';
 import { messageFrom } from '@/lib/http';
 import { stepsProvider } from '@/lib/steps/provider';
-import type { StepsStatus } from '@/lib/steps/types';
+import { sourceLabel, type StepsStatus } from '@/lib/steps/types';
+import { useT } from '@/providers/language-provider';
 
 export const HISTORY_DAYS = 30;
 
@@ -17,6 +18,7 @@ export type StepDay = { key: string; day: CalendarDay; steps: number | null };
  * app can be read, its counts are shown instead (they are the newest) and are saved to the server.
  */
 export function useStepHistory(today: CalendarDay, fallbackGoal: number) {
+  const t = useT();
   const todayKey = toDayKey(today);
   const [state, setState] = useState<{
     forDay: string;
@@ -118,6 +120,6 @@ export function useStepHistory(today: CalendarDay, fallbackGoal: number) {
     connect,
     connecting,
     openSettings: stepsProvider.openSettings,
-    sourceName: stepsProvider.sourceName,
+    sourceName: sourceLabel(t, stepsProvider),
   };
 }

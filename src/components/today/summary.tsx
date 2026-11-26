@@ -6,8 +6,10 @@ import Svg, { Circle } from 'react-native-svg';
 import { DisplayText } from '@/components/display-text';
 import { dayCounts } from '@/lib/day-plan';
 import type { MyDay } from '@/lib/fitness-api';
-import { progressLine } from '@/lib/today-tasks';
+import { splitHighlight } from '@/lib/i18n';
+import { progressLineKey } from '@/lib/today-tasks';
 import { formatWater } from '@/lib/water';
+import { useLanguage } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const WATER = '#38bdf8';
@@ -50,13 +52,14 @@ function Ring({ percent, size = 104 }: { percent: number; size?: number }) {
 }
 
 function Stat({ icon, color, value, label, ratio }: { icon: SymbolViewProps['name']; color: string; value: string; label: string; ratio: number }) {
+  const indic = useLanguage().language !== 'en';
   return (
     <View className="flex-1 items-center" accessible accessibilityLabel={`${label}: ${value}`}>
       <SymbolView name={icon} tintColor="#e8efe9" size={18} />
-      <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 14, marginTop: 6 }} numberOfLines={1}>
+      <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 14, marginTop: 6 }} numberOfLines={1} adjustsFontSizeToFit={indic}>
         {value}
       </Text>
-      <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 11, marginTop: 1 }} numberOfLines={1}>
+      <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 11, marginTop: 1 }} numberOfLines={1} adjustsFontSizeToFit={indic}>
         {label}
       </Text>
       <View className="overflow-hidden rounded-full" style={{ height: 4, width: '70%', marginTop: 8, backgroundColor: TRACK }}>
@@ -93,6 +96,8 @@ export function DaySummary({
   /** No card around it: it sits straight on the page. */
   plain?: boolean;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const counts = dayCounts(day);
   const complete = counts.total > 0 && counts.done >= counts.total;
   const part = (v: number, goal: number) => (goal > 0 ? v / goal : 0);
@@ -104,20 +109,28 @@ export function DaySummary({
         style={{ gap: 18 }}
         accessible
         accessibilityRole="progressbar"
-        accessibilityLabel={`${counts.done} of ${counts.total} done, ${percent} percent`}
+        accessibilityLabel={t('hm.summaryA11y', { done: counts.done, total: counts.total, percent })}
         accessibilityValue={{ min: 0, max: 100, now: percent }}>
         <Ring percent={percent} size={slim ? 76 : 104} />
         <View className="flex-1">
           {title ? (
-            <Text {...COMPACT_TEXT} numberOfLines={1} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1.2, marginBottom: 2 }}>
+            <Text {...COMPACT_TEXT} numberOfLines={1} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: indic ? 0 : 1.2, marginBottom: 2 }}>
               {title}
             </Text>
           ) : null}
-          <DisplayText {...COMPACT_TEXT} accessibilityLiveRegion="polite" numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: slim ? 22 : 24, lineHeight: slim ? 28 : 30 }} className={complete ? 'text-brand' : 'text-white'}>
-            {progressLine(percent)}
+          <DisplayText {...COMPACT_TEXT} accessibilityLiveRegion="polite" numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit style={{ fontSize: indic ? (slim ? 18 : 20) : slim ? 22 : 24, lineHeight: slim ? 28 : 30 }} className={complete ? 'text-brand' : 'text-white'}>
+            {t(progressLineKey(percent))}
           </DisplayText>
           <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, marginTop: 4 }}>
-            <Text className="font-bold text-white">{counts.done}</Text> of {counts.total} tasks done
+            {splitHighlight(t('hm.tasksDone', { done: counts.done, total: counts.total })).map((p, i) =>
+              p.highlight ? (
+                <Text key={i} className="font-bold text-white">
+                  {p.text}
+                </Text>
+              ) : (
+                p.text
+              )
+            )}
           </Text>
         </View>
         {action}
@@ -128,8 +141,8 @@ export function DaySummary({
         <Stat
           icon={{ ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' }}
           color={BRAND}
-          value={!day.training ? '–' : day.training.done ? 'Done' : 'To do'}
-          label="Workout"
+          value={!day.training ? '–' : day.training.done ? t('hm.done') : t('hm.toDo')}
+          label={t('hm.workout')}
           ratio={day.training?.done ? 1 : 0}
         />
         )}
@@ -137,21 +150,21 @@ export function DaySummary({
           icon={{ ios: 'fork.knife', android: 'restaurant', web: 'restaurant' }}
           color={MEALS}
           value={day.diet.total > 0 ? `${day.diet.done}/${day.diet.total}` : '–'}
-          label="Meals"
+          label={t('hm.meals')}
           ratio={part(day.diet.done, day.diet.total)}
         />
         <Stat
           icon={{ ios: 'drop', android: 'water_drop', web: 'water_drop' }}
           color={WATER}
           value={formatWater(day.water.totalMl)}
-          label="Water"
+          label={t('hm.water')}
           ratio={part(day.water.totalMl, day.water.goalMl)}
         />
         <Stat
           icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
           color={STEPS}
           value={day.steps.value == null ? '–' : short(day.steps.value, locale)}
-          label="Steps"
+          label={t('hm.steps')}
           ratio={part(day.steps.value ?? 0, day.steps.goal)}
         />
       </View>

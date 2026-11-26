@@ -9,7 +9,9 @@ import { NotificationsPanel } from '@/components/notifications-panel';
 import { SplashOverlay } from '@/components/splash-overlay';
 import { checkPendingPhoto } from '@/lib/pending-photo';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
+import { LanguageProvider, useT } from '@/providers/language-provider';
 import { NotificationsProvider } from '@/providers/notifications-provider';
+import { OutboxProvider } from '@/providers/outbox-provider';
 import { ProfileProvider, useProfile } from '@/providers/profile-provider';
 
 // Keep the native splash up until we know which screen to show (no flash of the wrong screen).
@@ -25,19 +27,20 @@ const theme = {
 
 /** Between login and the app: finding out whether this member has finished the setup questions. */
 function ProfileGate() {
+  const t = useT();
   const { status, error, reload } = useProfile();
   const { signOut } = useAuth();
   return (
     <View className="flex-1 items-center justify-center gap-4 bg-ink px-8">
       {status === 'error' ? (
         <>
-          <Text className="text-center text-base font-bold text-white">We could not load your account</Text>
+          <Text className="text-center text-base font-bold text-white">{t('acc.accountLoadFailed')}</Text>
           <Text className="text-center text-sm text-muted">{error}</Text>
           <Pressable onPress={reload} accessibilityRole="button" className="mt-2 rounded-full bg-brand px-8 py-3 active:opacity-80">
-            <Text className="font-bold text-ink">Try again</Text>
+            <Text className="font-bold text-ink">{t('common.tryAgain')}</Text>
           </Pressable>
           <Pressable onPress={() => signOut()} hitSlop={10} accessibilityRole="button" className="py-2 active:opacity-60">
-            <Text className="text-sm font-semibold text-muted">Log out</Text>
+            <Text className="text-sm font-semibold text-muted">{t('settings.logout')}</Text>
           </Pressable>
         </>
       ) : (
@@ -80,32 +83,40 @@ function RootNavigator() {
         <ProfileGate />
       ) : (
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: INK } }}>
+          {/* Every screen file in src/app must be listed in one of these groups. A file left out is open to
+              everyone, so someone who is logged out can get stuck on it (scripts/check-routes.mjs checks this). */}
           {/* Logged out: intro → login. */}
           <Stack.Protected guard={!loggedIn && !hasOnboarded}>
-            <Stack.Screen name="onboarding" options={{ animation: 'fade' }} />
+            <Stack.Screen name="onboarding" options={{ animation: 'fade' }} /> {/* i18n-ignore: a route name */}
           </Stack.Protected>
           <Stack.Protected guard={!loggedIn && hasOnboarded}>
-            <Stack.Screen name="login" options={{ animation: 'fade' }} />
+            <Stack.Screen name="login" options={{ animation: 'fade' }} /> {/* i18n-ignore: a route name */}
           </Stack.Protected>
           {/* Logged in, first time: the setup questions. */}
           <Stack.Protected guard={loggedIn && status === 'needed'}>
-            <Stack.Screen name="setup" options={{ animation: 'fade' }} />
+            <Stack.Screen name="setup" options={{ animation: 'fade' }} /> {/* i18n-ignore: a route name */}
           </Stack.Protected>
           {/* Logged in and set up: the app. */}
           <Stack.Protected guard={loggedIn && status === 'ready'}>
-            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-            <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="today-plan" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="steps" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="complete-profile" options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="chat/admin" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="ai" options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="claim-prize" options={{ animation: 'slide_from_bottom' }} />
-            <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="today-plan" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="steps" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="explore" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="edit-profile" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="complete-profile" options={{ animation: 'slide_from_bottom' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="client/[id]" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="chat/[id]" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="chat/admin" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="ai" options={{ animation: 'slide_from_bottom' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="week" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="calls" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="check-in" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="community" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="family" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="measures" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="milestones" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
           </Stack.Protected>
         </Stack>
       )}
@@ -119,11 +130,15 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <ProfileProvider>
-        <NotificationsProvider>
-          <RootNavigator />
-        </NotificationsProvider>
-      </ProfileProvider>
+      <LanguageProvider>
+        <OutboxProvider>
+          <ProfileProvider>
+            <NotificationsProvider>
+              <RootNavigator />
+            </NotificationsProvider>
+          </ProfileProvider>
+        </OutboxProvider>
+      </LanguageProvider>
     </AuthProvider>
   );
 }

@@ -1,11 +1,13 @@
 import { Tabs, TabList, TabSlot, TabTrigger, type TabTriggerSlotProps } from 'expo-router/ui';
 import { Pressable, Text, View } from 'react-native';
 
+import { useLanguage, useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 /** Web: a floating top bar instead of the native bottom tab bar. */
 export default function AppTabs() {
   const { role } = useProfile();
+  const t = useT();
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
@@ -16,19 +18,20 @@ export default function AppTabs() {
               <View className="h-7 w-7 items-center justify-center rounded-lg bg-brand">
                 <Text className="text-xs font-black text-ink">L5</Text>
               </View>
+              {/* i18n-ignore: part of the brand name */}
               <Text className="text-xs font-black tracking-[1px] text-white">FITNESS</Text>
             </View>
-            <TabTrigger name="index" href="/" asChild>
-              <TabButton>Home</TabButton>
+            <TabTrigger name="index" /* i18n-ignore: route name */ href="/" asChild>
+              <TabButton>{t('tabs.home')}</TabButton>
             </TabTrigger>
-            <TabTrigger name="logs" href="/logs" asChild>
-              <TabButton>Activity</TabButton>
+            <TabTrigger name="logs" /* i18n-ignore: route name */ href="/logs" asChild>
+              <TabButton>{t('tabs.activity')}</TabButton>
             </TabTrigger>
-            <TabTrigger name="diet" href="/diet" asChild>
-              <TabButton>{role === 'member' ? 'Chat' : 'Clients'}</TabButton>
+            <TabTrigger name="diet" /* i18n-ignore: route name */ href="/diet" asChild>
+              <TabButton>{role === 'member' ? t('tabs.chat') : t('tabs.clients')}</TabButton>
             </TabTrigger>
-            <TabTrigger name="profile" href="/profile" asChild>
-              <TabButton>Profile</TabButton>
+            <TabTrigger name="profile" /* i18n-ignore: route name */ href="/profile" asChild>
+              <TabButton>{t('tabs.profile')}</TabButton>
             </TabTrigger>
           </View>
         </View>
@@ -38,12 +41,16 @@ export default function AppTabs() {
 }
 
 function TabButton({ children, isFocused, onPress, onLongPress }: TabTriggerSlotProps) {
+  // Longer words in the other languages may take two lines.
+  const longer = useLanguage().language !== 'en';
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onLongPress}
-      className={`rounded-xl px-3 py-2 active:opacity-70 ${isFocused ? 'bg-brand/10' : ''}`}>
-      <Text className={`text-sm font-semibold ${isFocused ? 'text-brand' : 'text-muted'}`}>
+      accessibilityRole="tab"
+      accessibilityState={{ selected: !!isFocused }}
+      className={`rounded-xl px-3 py-2 active:opacity-70 ${longer ? 'shrink' : ''} ${isFocused ? 'bg-brand/10' : ''}`}>
+      <Text className={`text-sm font-semibold ${longer ? 'text-center' : ''} ${isFocused ? 'text-brand' : 'text-muted'}`}>
         {children}
       </Text>
     </Pressable>

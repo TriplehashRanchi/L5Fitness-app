@@ -15,10 +15,12 @@ import {
 
 import { BodyAvatar } from '@/components/body-avatar';
 import { DisplayText } from '@/components/display-text';
+import { useDeviceClock } from '@/hooks/use-device-clock';
 import { bmi, bmiCategory } from '@/lib/body';
 import type { Home } from '@/lib/fitness-api';
 import { playSound } from '@/lib/sounds';
 import { formatWater, waterPercent } from '@/lib/water';
+import { useLanguage, useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.2 } as const;
@@ -64,16 +66,18 @@ function Stat({
   percent: number;
   color: string;
 }) {
+  const { t, language } = useLanguage();
+  const english = language === 'en';
   const right = side === 'right';
   return (
     <View
       accessible
-      accessibilityLabel={`${title}: ${value}${unit ? ` ${unit}` : ''} done, ${note}`}
+      accessibilityLabel={t('act.heroStatA11y', { title, value: unit ? `${value} ${unit}` : value, note })}
       accessibilityValue={{ min: 0, max: 100, now: percent }}
       style={{ alignItems: right ? 'flex-end' : 'flex-start' }}>
       <View className="flex-row items-center gap-1.5" style={{ flexDirection: right ? 'row-reverse' : 'row' }}>
         <SymbolView name={ICON[icon]} tintColor={color} size={13} />
-        <Text {...COMPACT_TEXT} className="text-[10px] font-bold uppercase tracking-[1px] text-white/60">
+        <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className={`shrink text-[10px] font-bold uppercase text-white/60 ${english ? 'tracking-[1px]' : ''}`}>
           {title}
         </Text>
       </View>
@@ -87,7 +91,7 @@ function Stat({
           </DisplayText>
         ) : null}
       </View>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[11px] font-bold" style={{ color }}>
+      <Text {...COMPACT_TEXT} numberOfLines={english ? 1 : 2} className="text-[11px] font-bold" style={{ color, textAlign: right ? 'right' : 'left' }}>
         {note}
       </Text>
     </View>
@@ -96,17 +100,19 @@ function Stat({
 
 /** One number in the calories column: a small glass tile with its name and value. */
 function Figure({ label, value, color, strong }: { label: string; value: string; color: string; strong?: boolean }) {
+  const { t, language } = useLanguage();
+  const english = language === 'en';
   return (
     <View
       accessible
-      accessibilityLabel={`${label}: ${value} kilocalories`}
+      accessibilityLabel={t('act.kcalA11y', { label, value })}
       className="items-end justify-center rounded-xl border px-2.5"
       style={{
         height: 44,
         borderColor: strong ? `${color}8c` : 'rgba(255,255,255,0.12)',
         backgroundColor: strong ? `${color}1f` : 'rgba(255,255,255,0.04)',
       }}>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[9px] font-bold uppercase tracking-[1px] text-white/55">
+      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className={`text-[9px] font-bold uppercase text-white/55 ${english ? 'tracking-[1px]' : ''}`}>
         {label}
       </Text>
       <View className="flex-row items-baseline gap-1">
@@ -126,13 +132,14 @@ function Figure({ label, value, color, strong }: { label: string; value: string;
  * something to undo, then a clear outlined pill with the undo arrow.
  */
 function UndoPill({ enabled, onPress }: { enabled: boolean; onPress: () => void }) {
+  const t = useT();
   return (
     <Pressable
       onPress={onPress}
       disabled={!enabled}
       hitSlop={6}
       accessibilityRole="button"
-      accessibilityLabel="Undo the last drink"
+      accessibilityLabel={t('act.undoDrink')}
       accessibilityState={{ disabled: !enabled }}
       className="flex-row items-center justify-center gap-1.5 rounded-xl border active:opacity-60"
       style={{
@@ -143,8 +150,8 @@ function UndoPill({ enabled, onPress }: { enabled: boolean; onPress: () => void 
         opacity: enabled ? 1 : 0.45,
       }}>
       <SymbolView name={ICON.undo} tintColor="#ffffff" size={12} />
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[11px] font-bold text-white">
-        Undo
+      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="shrink text-[11px] font-bold text-white">
+        {t('act.undo')}
       </Text>
     </Pressable>
   );
@@ -159,6 +166,7 @@ const ROW = 32;
  * It snaps to each amount; tapping an amount above or below moves the wheel to it.
  */
 function AmountWheel({ value, onChange }: { value: number; onChange: (ml: number) => void }) {
+  const t = useT();
   const ref = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const start = Math.max(0, AMOUNTS_ML.indexOf(value));
   const pick = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -169,8 +177,8 @@ function AmountWheel({ value, onChange }: { value: number; onChange: (ml: number
     <View
       accessible
       accessibilityRole="adjustable"
-      accessibilityLabel="Amount of water to add"
-      accessibilityValue={{ text: `${value} millilitres` }}
+      accessibilityLabel={t('act.waterAmountA11y')}
+      accessibilityValue={{ text: t('act.millilitres', { n: value }) }}
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
       onAccessibilityAction={(e) => {
         const i = AMOUNTS_ML.indexOf(value) + (e.nativeEvent.actionName === 'increment' ? 1 : -1);
@@ -248,6 +256,8 @@ function AddButton({
   disabled?: boolean;
   onPress: () => void;
 }) {
+  const { t, language } = useLanguage();
+  const english = language === 'en';
   // A glass pill with a solid round badge: the badge is the thing to press, the text says what it adds.
   return (
     <Pressable
@@ -255,12 +265,10 @@ function AddButton({
       disabled={disabled || busy}
       accessibilityRole="button"
       accessibilityLabel={a11y}
-      className="flex-row items-center rounded-full border"
+      className={`items-center border ${english ? 'flex-row rounded-full' : 'rounded-3xl'}`}
       style={({ pressed }) => ({
-        height: 44,
-        paddingLeft: 4,
-        paddingRight: 8,
-        gap: 6,
+        // Indian words are too long to sit beside the badge in this narrow column: they go under it.
+        ...(english ? { height: 44, paddingLeft: 4, paddingRight: 8, gap: 6 } : { paddingVertical: 6, paddingHorizontal: 6, gap: 3 }),
         borderColor: `${color}8c`,
         backgroundColor: pressed ? `${color}47` : `${color}1f`,
         opacity: disabled ? 0.5 : 1,
@@ -271,11 +279,11 @@ function AddButton({
         style={{ width: 34, height: 34, backgroundColor: color, boxShadow: `0px 0px 12px ${color}99` }}>
         {busy ? <ActivityIndicator color={INK} size="small" /> : <SymbolView name={ICON[icon]} tintColor={INK} size={16} weight="bold" />}
       </View>
-      <View className="flex-1">
-        <Text {...COMPACT_TEXT} numberOfLines={1} className="text-[9px] font-bold uppercase tracking-[1px] text-white/55">
-          Add
+      <View className={english ? 'flex-1' : 'items-center self-stretch'}>
+        <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className={`text-[9px] font-bold uppercase text-white/55 ${english ? 'tracking-[1px]' : ''}`}>
+          {t('meal.add')}
         </Text>
-        <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-[12px] font-black" style={{ color, lineHeight: 15 }}>
+        <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="text-[12px] font-black" style={{ color, lineHeight: english ? 15 : 18 }}>
           {label}
         </Text>
       </View>
@@ -313,6 +321,8 @@ export function BodyHero({
 }) {
   const router = useRouter();
   const { profile } = useProfile();
+  const t = useT();
+  const { locale } = useDeviceClock().format;
   const { width: screen } = useWindowDimensions();
   const [glass, setGlass] = useState<number>(250);
 
@@ -354,7 +364,7 @@ export function BodyHero({
   const burned = fromSteps;
   // One figure for the day: meals and steps added together (workouts are not shown on Home).
   const totalKcal = eaten + fromSteps;
-  const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+  const fmt = (n: number) => Math.round(n).toLocaleString(locale);
 
   return (
     <View className="mt-3">
@@ -368,11 +378,11 @@ export function BodyHero({
           fill={waterPct / 100}
           color={WATER}
           height={avatarHeight}
-          label={`Your body avatar. Water ${waterPct}%${bmiValue ? `, BMI ${bmiValue}` : ''}`}
+          label={t(bmiValue ? 'act.avatarBmiA11y' : 'act.avatarA11y', { percent: waterPct, bmi: bmiValue ?? '' })}
         />
         {bmiValue ? (
           <Text {...COMPACT_TEXT} className="mt-1 text-[11px] font-semibold text-white/60">
-            BMI {bmiValue} · {bmiCategory(bmiValue).label}
+            {t('act.bmiLine', { value: bmiValue, band: t(bmiCategory(bmiValue).key) })}
           </Text>
         ) : null}
       </View>
@@ -384,10 +394,10 @@ export function BodyHero({
           <Stat
             side="left"
             icon="water"
-            title="Water"
+            title={t('act.water')}
             value={amount}
             unit={unit}
-            note={!water ? '–' : water.totalMl >= water.goalMl ? 'Goal reached' : `${formatWater(water.goalMl - water.totalMl)} left`}
+            note={!water ? '–' : water.totalMl >= water.goalMl ? t('act.goalReached') : t('act.amountLeft', { amount: formatWater(water.goalMl - water.totalMl) })}
             percent={waterPct}
             color={WATER}
           />
@@ -398,7 +408,7 @@ export function BodyHero({
           color={WATER}
           icon="water"
           label={`${glass} ml`}
-          a11y={`Add ${glass} millilitres of water`}
+          a11y={t('act.addWaterA11y', { n: glass })}
           busy={waterBusy}
           disabled={!water}
           onPress={() => {
@@ -416,26 +426,26 @@ export function BodyHero({
             <Stat
               side="right"
               icon="flame"
-              title="Calories"
+              title={t('act.calories')}
               value={fmt(eaten)}
               unit="kcal"
-              note={`${fmt(burned)} kcal burned`}
+              note={t('act.kcalBurned', { n: fmt(burned) })}
               percent={0}
               color={CAL}
             />
             <AddButton
               color={CAL}
               icon="camera"
-              label="Meal"
-              a11y="Add a meal"
+              label={t('act.meal')}
+              a11y={t('act.addMealA11y')}
               // Opens the Add meal page, where the member picks: take a photo, or choose one.
               onPress={() => router.push('/add-meal')}
             />
           </View>
         }>
-        <Figure label="Meals" value={fmt(eaten)} color={CAL} />
-        <Figure label="Steps" value={fmt(fromSteps)} color={BURN} />
-        <Figure label="Total" value={fmt(totalKcal)} color="#ffffff" strong />
+        <Figure label={t('act.meals')} value={fmt(eaten)} color={CAL} />
+        <Figure label={t('act.steps')} value={fmt(fromSteps)} color={BURN} />
+        <Figure label={t('act.total')} value={fmt(totalKcal)} color="#ffffff" strong />
       </Column>
     </View>
   );

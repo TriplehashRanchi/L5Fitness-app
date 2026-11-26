@@ -9,11 +9,12 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { ConfirmSheet } from '@/components/confirm-sheet';
 import { DisplayText } from '@/components/display-text';
 import { useDeviceClock } from '@/hooks/use-device-clock';
-import { fmtKg } from '@/lib/body';
 import { getZonedParts, toDayKey } from '@/lib/datetime';
-import { getChallenge, startChallenge, type ChallengeState, type ClaimStatus } from '@/lib/challenge-api';
+import { getChallenge, startChallenge, type ChallengeState, type Habit } from '@/lib/challenge-api';
 import { messageFrom } from '@/lib/http';
+import { splitHighlight, type Key } from '@/lib/i18n';
 import { useAuth } from '@/providers/auth-provider';
+import { useLanguage, useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const GOLD = '#ffd66b';
@@ -29,36 +30,42 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const DAY_MS = 86_400_000;
 
 /**
- * The challenge at the end of Home. Change the numbers and words here.
- * The server keeps who started when and judges who reached the goal (GET /challenge); these are only the
- * words shown before that answer arrives.
+ * The 90-day habit challenge at the end of Home: it rewards showing up, never losing weight, and there is no
+ * money in it. The server keeps who started when and counts the habit days (GET /challenge); the rules are
+ * set there, and these are the words that go with them.
  */
-export const CHALLENGE = {
+const CHALLENGE = {
   days: 90,
-  goalKg: 10,
-  prize: '₹50,000',
-  prizeInWords: 'Rupees fifty thousand only',
-  name: '90-day challenge',
+  goalDays: 75,
 } as const;
+
+/** The four daily habits, in the order shown under the certificate. */
+const HABITS: { id: Habit; label: Key }[] = [
+  { id: 'meal', label: 'hm.habitMeal' },
+  { id: 'water', label: 'hm.water' },
+  { id: 'move', label: 'hm.habitMove' },
+  { id: 'checkin', label: 'hm.habitCheckin' },
+];
 
 const dayToMs = (key: string) => {
   const [y, m, d] = key.split('-').map(Number);
   return Date.UTC(y, m - 1, d);
 };
 
-/** "18 Feb 2027" for a day key, in the member's language. */
+/** "18 Feb 2027" for a day key. Other languages' month names are too long for the certificate: "18/02/2027". */
 function shortDate(key: string, locale: string) {
   try {
-    return new Date(dayToMs(key) + DAY_MS / 2).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    const month = locale.startsWith('en') ? 'short' : '2-digit';
+    return new Date(dayToMs(key) + DAY_MS / 2).toLocaleDateString(locale, { day: month === 'short' ? 'numeric' : '2-digit', month, year: 'numeric', timeZone: 'UTC' });
   } catch {
     return key;
   }
 }
 
 /** The rubber stamp across the cheque. It lands with a thump the first time it is shown. */
-export const STAMP_COLORS = { red: STAMP_RED, green: STAMP_GREEN } as const;
-
 function Stamp({ label, color, k }: { label: string; color: string; k: number }) {
+  // Indian scripts: no letter spacing (it pulls joined letters apart), a little smaller, with room for vowel signs.
+  const indic = useLanguage().language !== 'en';
   const reduce = useReducedMotion();
   const scale = useSharedValue(reduce ? 1 : 1.9);
   const opacity = useSharedValue(reduce ? 0.9 : 0);
@@ -74,8 +81,8 @@ function Stamp({ label, color, k }: { label: string; color: string; k: number })
   return (
     <Animated.View
       pointerEvents="none"
-      style={[{ position: 'absolute', left: '33%', top: '61%', borderWidth: 3 * k, borderColor: color, borderRadius: 8 * k, paddingHorizontal: 12 * k, paddingVertical: 2 * k, backgroundColor: 'rgba(255,248,220,0.35)' }, style]}>
-      <Text maxFontSizeMultiplier={1} style={{ color, fontSize: 19 * k, fontWeight: '900', letterSpacing: 2 * k }}>
+      style={[{ position: 'absolute', left: '33%', top: '61%', ...(indic ? { maxWidth: '64%' } : null), borderWidth: 3 * k, borderColor: color, borderRadius: 8 * k, paddingHorizontal: 12 * k, paddingVertical: 2 * k, backgroundColor: 'rgba(255,248,220,0.35)' }, style]}>
+      <Text maxFontSizeMultiplier={1} numberOfLines={indic ? 1 : undefined} adjustsFontSizeToFit={indic} style={{ color, fontSize: (indic ? 16 : 19) * k, fontWeight: '900', letterSpacing: indic ? 0 : 2 * k, ...(indic ? { lineHeight: 25 * k } : null) }}>
         {label}
       </Text>
     </Animated.View>
@@ -83,16 +90,22 @@ function Stamp({ label, color, k }: { label: string; color: string; k: number })
 }
 
 /**
- * The prize cheque, made out to the member. Everything on it is drawn to the cheque's width, so it looks
- * the same on a small and a large phone. It sits a little crooked, and still.
+ * The certificate, drawn like a cheque and made out to the member. Everything on it is drawn to its width, so
+ * it looks the same on a small and a large phone. It sits a little crooked, and still.
  */
-export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date: string | null; stamp: string; stampColor: string }) {
+function Cheque({ payee, date, stamp, stampColor }: { payee: string; date: string | null; stamp: string; stampColor: string }) {
   const [w, setW] = useState(0);
+  const { t, language } = useLanguage();
+  // In the other languages the printed words lose their letter spacing, get a set line height, and each line is
+  // held to its own part of the paper, shrinking if it has to.
+  const indic = language !== 'en';
 
   const k = w / 330; // every size below was drawn for a 330-wide cheque
   const h = Math.round(w * 0.535);
-  const label = { color: PRINT, fontSize: 8 * k, fontWeight: '800', letterSpacing: 1.2 * k } as const;
-  const written = { color: PEN, fontStyle: 'italic', fontWeight: '700' } as const;
+  const label = { color: PRINT, fontSize: (indic ? 8.5 : 8) * k, fontWeight: '800', letterSpacing: indic ? 0 : 1.2 * k, ...(indic ? { lineHeight: 12.5 * k } : null) } as const;
+  // The slant of the "pen" needs a little room at the end of a line in Indian scripts.
+  const written = { color: PEN, fontStyle: 'italic', fontWeight: '700', ...(indic ? { paddingRight: 3 * k } : null) } as const;
+  const fit = indic ? ({ numberOfLines: 1, adjustsFontSizeToFit: true } as const) : null;
 
   return (
     <View style={{ marginTop: 28, marginBottom: 30, marginHorizontal: 8 }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
@@ -100,7 +113,7 @@ export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date
         <View
           accessible
           accessibilityRole="image"
-          accessibilityLabel={`A prize cheque from L5 Fitness. Pay ${payee}, ${CHALLENGE.prize}, for losing ${CHALLENGE.goalKg} kg in ${CHALLENGE.days} days. Stamped: ${stamp}.`}
+          accessibilityLabel={t('hm.certA11y', { name: payee, goal: CHALLENGE.goalDays, days: CHALLENGE.days, stamp })}
           style={{ width: w, height: h, transform: [{ rotate: '-3deg' }] }}>
           {/* a soft gold glow under the paper */}
           <View style={{ position: 'absolute', left: -10, right: -10, top: -10, bottom: -10, borderRadius: 28, backgroundColor: 'rgba(255,214,107,0.10)' }} />
@@ -116,19 +129,19 @@ export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date
               <View style={{ position: 'absolute', left: 7 * k, right: 7 * k, top: 7 * k, bottom: 7 * k, borderWidth: 1.5, borderStyle: 'dashed', borderColor: 'rgba(122,84,20,0.35)', borderRadius: 9 * k }} />
 
               {/* who issues it, and the date it must be earned by */}
-              <View style={{ position: 'absolute', left: 18 * k, top: 15 * k }}>
+              <View style={{ position: 'absolute', left: 18 * k, top: 15 * k, ...(indic ? { right: 108 * k } : null) }}>
                 <Text maxFontSizeMultiplier={1} style={{ color: INK, fontSize: 13 * k, fontWeight: '900', letterSpacing: 1.2 * k }}>
                   L5 FITNESS
                 </Text>
-                <Text maxFontSizeMultiplier={1} style={[label, { letterSpacing: 1.4 * k, marginTop: 1 }]}>
-                  90-DAY CHALLENGE CHEQUE
+                <Text maxFontSizeMultiplier={1} {...fit} style={[label, { letterSpacing: indic ? 0 : 1.4 * k, marginTop: 1 }]}>
+                  {t('hm.certKind')}
                 </Text>
               </View>
-              <View style={{ position: 'absolute', right: 18 * k, top: 16 * k, alignItems: 'flex-end' }}>
+              <View style={{ position: 'absolute', right: 18 * k, top: 16 * k, alignItems: 'flex-end', ...(indic ? { width: 86 * k } : null) }}>
                 <Text maxFontSizeMultiplier={1} style={label}>
-                  DATE
+                  {t('hm.certDate')}
                 </Text>
-                <Text maxFontSizeMultiplier={1} style={[written, { fontSize: 12 * k, marginTop: 1 }]}>
+                <Text maxFontSizeMultiplier={1} {...fit} style={[written, { fontSize: 12 * k, marginTop: 1 }]}>
                   {date ?? '—  —  —'}
                 </Text>
               </View>
@@ -136,7 +149,7 @@ export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date
               {/* pay … */}
               <View style={{ position: 'absolute', left: 18 * k, right: 122 * k, top: 58 * k }}>
                 <Text maxFontSizeMultiplier={1} style={label}>
-                  PAY
+                  {t('hm.certAwarded')}
                 </Text>
                 <View style={{ borderBottomWidth: 1, borderBottomColor: RULE, paddingLeft: 4 * k, paddingBottom: 2 * k }}>
                   <Text maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit style={[written, { fontSize: 19 * k, fontWeight: '800' }]}>
@@ -145,23 +158,23 @@ export function Cheque({ payee, date, stamp, stampColor }: { payee: string; date
                 </View>
               </View>
               <View style={{ position: 'absolute', right: 18 * k, top: 56 * k, width: 96 * k, height: 36 * k, borderWidth: 1.5, borderColor: INK, borderRadius: 6 * k, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.4)' }}>
-                <DisplayText maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit style={{ color: INK, fontSize: 19 * k, paddingHorizontal: 4 * k }}>
-                  {CHALLENGE.prize}
+                <DisplayText maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit style={{ color: INK, fontSize: (indic ? 15 : 19) * k, paddingHorizontal: 4 * k }}>
+                  {t('hm.certDays', { n: CHALLENGE.goalDays })}
                 </DisplayText>
               </View>
               <View style={{ position: 'absolute', left: 18 * k, right: 18 * k, top: 101 * k, borderBottomWidth: 1, borderBottomColor: RULE, paddingLeft: 4 * k, paddingBottom: 2 * k }}>
-                <Text maxFontSizeMultiplier={1} numberOfLines={1} style={[written, { fontSize: 12.5 * k }]}>
-                  {CHALLENGE.prizeInWords}
+                <Text maxFontSizeMultiplier={1} numberOfLines={1} adjustsFontSizeToFit={indic} style={[written, { fontSize: (indic ? 11.5 : 12.5) * k }, indic ? { lineHeight: 17 * k } : null]}>
+                  {t('hm.certGoal')}
                 </Text>
               </View>
 
               {/* for … and the signature */}
-              <View style={{ position: 'absolute', left: 18 * k, bottom: 15 * k }}>
+              <View style={{ position: 'absolute', left: 18 * k, bottom: (indic ? 13 : 15) * k, ...(indic ? { right: 114 * k } : null) }}>
                 <Text maxFontSizeMultiplier={1} style={label}>
-                  FOR
+                  {t('hm.certFor')}
                 </Text>
-                <Text maxFontSizeMultiplier={1} style={[written, { fontSize: 11.5 * k }]}>
-                  Losing {CHALLENGE.goalKg} kg in {CHALLENGE.days} days
+                <Text maxFontSizeMultiplier={1} {...fit} style={[written, { fontSize: (indic ? 10.5 : 11.5) * k }, indic ? { lineHeight: 16 * k } : null]}>
+                  {t('hm.certShowingUp')}
                 </Text>
               </View>
               <View style={{ position: 'absolute', right: 20 * k, bottom: 12 * k, width: 88 * k, alignItems: 'center' }}>
@@ -196,6 +209,8 @@ const KNOB = SLIDE_H - SLIDE_PAD * 2;
  * Letting go before the end sends the runner back; nothing starts by accident.
  */
 function SlideToStart({ onComplete }: { onComplete: () => void }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const x = useSharedValue(0);
   const maxX = useSharedValue(1);
   const press = useSharedValue(0);
@@ -252,8 +267,8 @@ function SlideToStart({ onComplete }: { onComplete: () => void }) {
     <View
       accessible
       accessibilityRole="button"
-      accessibilityLabel={`Start my ${CHALLENGE.days} days`}
-      accessibilityHint="Slide from left to right, or double tap"
+      accessibilityLabel={t('hm.startDays', { days: CHALLENGE.days })}
+      accessibilityHint={t('hm.slideHint')}
       accessibilityActions={[{ name: 'activate' }]}
       onAccessibilityAction={finish}
       onLayout={(e) => {
@@ -272,13 +287,13 @@ function SlideToStart({ onComplete }: { onComplete: () => void }) {
 
       <Animated.View pointerEvents="none" className="items-center justify-center" style={[{ position: 'absolute', left: KNOB, right: 44, top: 0, bottom: 0 }, hint]}>
         {/* the words sit straight on the green track: nothing behind them */}
-        <Text maxFontSizeMultiplier={1.15} numberOfLines={1} className="font-extrabold text-white" style={{ fontSize: 16 }}>
-          Slide to start my {CHALLENGE.days} days
+        <Text maxFontSizeMultiplier={1.15} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit={indic} className={`font-extrabold text-white ${indic ? 'text-center' : ''}`} style={{ fontSize: indic ? 13.5 : 16 }}>
+          {t('hm.slideToStart', { days: CHALLENGE.days })}
         </Text>
       </Animated.View>
       <Animated.View pointerEvents="none" className="items-center justify-center" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, count]}>
         <DisplayText maxFontSizeMultiplier={1.15} style={{ color: INK, fontSize: 22, lineHeight: 28 }}>
-          DAY {day || 1}
+          {t('hm.dayN', { n: day || 1 })}
         </DisplayText>
       </Animated.View>
 
@@ -297,8 +312,10 @@ function SlideToStart({ onComplete }: { onComplete: () => void }) {
  * strip of racing chevrons. At the right, what is at stake or how long is left.
  */
 function ChallengeTitle({ status, hot }: { status: string; hot: boolean }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   return (
-    <View accessible accessibilityRole="header" accessibilityLabel={`${CHALLENGE.name}. ${status}`}>
+    <View accessible accessibilityRole="header" accessibilityLabel={`${t('hm.chName')}. ${status}`}>
       <View className="flex-row items-center" style={{ gap: 10 }}>
         <View className="items-center justify-center" style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: GOLD, transform: [{ rotate: '-8deg' }] }}>
           <SymbolView name={{ ios: 'flame.fill', android: 'local_fire_department', web: 'local_fire_department' }} tintColor={INK} size={24} />
@@ -307,15 +324,15 @@ function ChallengeTitle({ status, hot }: { status: string; hot: boolean }) {
           {CHALLENGE.days}
         </DisplayText>
         <View className="flex-1">
-          <DisplayText {...COMPACT_TEXT} style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: 1 }}>
-            DAY
+          <DisplayText {...COMPACT_TEXT} numberOfLines={indic ? 1 : undefined} adjustsFontSizeToFit={indic} style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: indic ? 0 : 1 }}>
+            {t('hm.chDay')}
           </DisplayText>
-          <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: 1 }}>
-            CHALLENGE
+          <DisplayText {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit style={{ color: '#ffffff', fontSize: 19, lineHeight: 21, letterSpacing: indic ? 0 : 1 }}>
+            {t('hm.chChallenge')}
           </DisplayText>
         </View>
-        <View className="rounded-full" style={{ flexShrink: 0, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: hot ? GOLD : 'transparent', borderWidth: 1.5, borderColor: GOLD }}>
-          <Text {...COMPACT_TEXT} numberOfLines={1} className="font-black uppercase" style={{ color: hot ? INK : GOLD, fontSize: 11.5, letterSpacing: 0.8 }}>
+        <View className="rounded-full" style={{ flexShrink: 0, ...(indic ? { maxWidth: '40%' } : null), paddingHorizontal: 12, paddingVertical: 6, backgroundColor: hot ? GOLD : 'transparent', borderWidth: 1.5, borderColor: GOLD }}>
+          <Text {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} className={`font-black uppercase ${indic ? 'text-center' : ''}`} style={{ color: hot ? INK : GOLD, fontSize: indic ? 11 : 11.5, letterSpacing: indic ? 0 : 0.8 }}>
             {status}
           </Text>
         </View>
@@ -331,41 +348,21 @@ function ChallengeTitle({ status, hot }: { status: string; hot: boolean }) {
 }
 
 /** Straight to the chat with the dietitian. */
-/** The way to the claim form, or to how the claim is doing once it is sent. Same shape as the chat button, in gold. */
-function ClaimButton({ status, onPress }: { status: ClaimStatus | null; onPress: () => void }) {
-  const label =
-    status === 'paid' ? 'Prize paid · See details' : status === 'approved' ? 'Claim approved · See details' : status === 'rejected' ? 'Fix and resend your claim' : status === 'pending' ? 'Claim sent · In review' : 'Claim your prize';
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      className="flex-row items-center rounded-full active:opacity-80"
-      style={{ minHeight: 56, marginTop: 12, paddingLeft: 6, paddingRight: 18, gap: 12, backgroundColor: GOLD }}>
-      <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: INK }}>
-        <SymbolView name={{ ios: 'trophy.fill', android: 'emoji_events', web: 'emoji_events' }} tintColor={GOLD} size={20} />
-      </View>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="flex-1 font-black" style={{ color: INK, fontSize: 16 }}>
-        {label}
-      </Text>
-      <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={INK} size={16} />
-    </Pressable>
-  );
-}
-
 function ChatButton({ label, onPress }: { label: string; onPress: () => void }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Opens your chat with your dietitian"
+      accessibilityHint={t('hm.openChatHint')}
       className="flex-row items-center rounded-full active:opacity-80"
       style={{ minHeight: 56, marginTop: 16, paddingLeft: 6, paddingRight: 18, gap: 12, backgroundColor: BRAND }}>
       <View className="items-center justify-center" style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: INK }}>
         <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} tintColor={BRAND} size={20} />
       </View>
-      <Text {...COMPACT_TEXT} numberOfLines={1} className="flex-1 font-black" style={{ color: INK, fontSize: 16 }}>
+      <Text {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} className="flex-1 font-black" style={{ color: INK, fontSize: indic ? 14.5 : 16 }}>
         {label}
       </Text>
       <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} tintColor={INK} size={16} />
@@ -373,12 +370,48 @@ function ChatButton({ label, onPress }: { label: string; onPress: () => void }) 
   );
 }
 
+/** The four habits with a tick on the ones done today. */
+function TodayHabits({ done, needed }: { done: Habit[]; needed: number }) {
+  const t = useT();
+  const counted = done.length >= needed;
+  const list = HABITS.map((h) => t(done.includes(h.id) ? 'hm.habitDone' : 'hm.habitNotDone', { habit: t(h.label) })).join(', ');
+  return (
+    <View
+      accessible
+      accessibilityLabel={t('hm.habitsA11y', { done: done.length, total: HABITS.length, list })}
+      style={{ marginTop: 14 }}>
+      <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: counted ? BRAND : MUTED, fontSize: 13 }}>
+        {counted ? t('hm.todayCounts') : t('hm.todayNeeded', { done: done.length, needed })}
+      </Text>
+      <View className="flex-row" style={{ gap: 6, marginTop: 8 }}>
+        {HABITS.map((h) => {
+          const on = done.includes(h.id);
+          return (
+            <View key={h.id} className="flex-1 items-center rounded-2xl" style={{ paddingVertical: 8, gap: 4, borderWidth: 1.5, borderColor: on ? BRAND : 'rgba(255,255,255,0.14)' }}>
+              <SymbolView
+                name={on ? { ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' } : { ios: 'circle', android: 'radio_button_unchecked', web: 'radio_button_unchecked' }}
+                tintColor={on ? BRAND : MUTED}
+                size={18}
+              />
+              <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="font-bold" style={{ color: on ? '#ffffff' : MUTED, fontSize: 11.5 }}>
+                {t(h.label)}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 /**
- * The 90-day challenge, told with one object: a prize cheque already made out to the member. A stamp says
- * where they stand (LOCKED, then DAY 12 / 90, then EARNED), and under it are the kilograms lost so far.
- * The server keeps the start day and decides who has reached the goal.
+ * The 90-day challenge, told with one object: a certificate already made out to the member. A stamp says
+ * where they stand (LOCKED, then DAY 12 / 90, then EARNED), and under it are their habit days so far.
+ * `refreshKey` changes when something is logged on Home, so today's ticks keep up.
  */
-export function OfferCard() {
+export function OfferCard({ refreshKey }: { refreshKey?: string }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const router = useRouter();
   const user = useAuth().session?.user ?? null;
   const { profile } = useProfile();
@@ -400,14 +433,17 @@ export function OfferCard() {
     }
   }, [todayKey]);
 
-  // Each time Home comes back into view: a weight logged in Profile moves the bar at once.
+  // Each time Home comes back into view (a meal or check-in added elsewhere), and after logging on Home.
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      // refreshKey is not used inside: a change in it is the signal to ask again.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [load, refreshKey])
   );
 
-  if (!user || !state) return null;
+  // `rules.goalDays` is missing while an older server is still answering: show nothing rather than half a card.
+  if (!user || !state?.rules.goalDays) return null;
 
   const begin = async () => {
     setAsking(false);
@@ -426,30 +462,35 @@ export function OfferCard() {
   };
   const toChat = () => router.navigate('/diet');
 
-  const { rules, totals, entry, claim } = state;
+  const { rules, totals, entry, paused } = state;
   const reached = !!entry?.reached;
   const over = !!entry?.over && !reached;
-  const left = entry ? rules.days - entry.day : rules.days;
-  const lost = entry?.lostKg ?? 0;
-  const share = Math.min(1, lost / rules.goalKg);
+  const left = entry?.daysLeft ?? rules.days;
+  const active = entry?.activeDays ?? 0;
+  const share = Math.min(1, active / rules.goalDays);
+  const daysLeft = t(left === 1 ? 'hm.dayLeft' : 'hm.daysLeft', { n: left });
+  const leftWords = left === 0 ? t('hm.leftLastDay') : daysLeft;
 
-  const stamp = !entry ? 'LOCKED' : claim?.status === 'paid' ? 'PAID' : reached ? 'EARNED' : over ? 'TIME UP' : `DAY ${entry.day} / ${rules.days}`;
-  const status = !entry ? `Win ${rules.prize}` : reached ? 'Goal reached' : over ? 'Time up' : left === 0 ? 'Last day' : `${left} ${left === 1 ? 'day' : 'days'} left`;
-  const finishers =
-    totals.completed === 0 ? 'Nobody has finished it yet. Be the first.' : `${totals.completed} ${totals.completed === 1 ? 'member has' : 'members have'} completed the challenge so far.`;
+  const stamp = !entry ? t('hm.stampLocked') : reached ? t('hm.stampEarned') : over ? t('hm.stampTimeUp') : paused ? t('hm.stampPaused') : t('hm.stampDay', { n: entry.day, total: rules.days });
+  const status = !entry ? t('hm.stHabits') : reached ? t('hm.stCompleted') : over ? t('hm.stTimeUp') : paused ? t('hm.stPaused') : left === 0 ? t('hm.stLastDay') : daysLeft;
+  const others = totals.joined === 0 ? t('hm.beFirst') : t(totals.joined === 1 ? 'hm.joinedOne' : 'hm.joinedMany', { n: totals.joined });
 
   return (
     <View className="mx-5 mb-6" style={{ paddingTop: 8 }}>
-      <ChallengeTitle status={status} hot={!!entry && !over} />
-      <DisplayText {...COMPACT_TEXT} accessibilityRole="header" style={{ color: '#ffffff', fontSize: 31, lineHeight: 37, letterSpacing: -0.8, marginTop: 18 }}>
-        {reached ? 'You earned it.\nGo and claim it.' : 'This cheque has\nyour name on it.'}
+      <ChallengeTitle status={status} hot={!!entry && !over && !paused} />
+      <DisplayText {...COMPACT_TEXT} accessibilityRole="header" style={{ color: '#ffffff', fontSize: indic ? 25 : 31, lineHeight: 37, letterSpacing: indic ? 0 : -0.8, marginTop: 18 }}>
+        {reached ? t('hm.headEarned') : t('hm.headYours')}
       </DisplayText>
       <Text {...COMPACT_TEXT} style={{ color: MUTED, fontSize: 14, lineHeight: 20, marginTop: 6 }}>
-        Lose{' '}
-        <Text className="font-bold text-white">
-          {rules.goalKg} kg in {rules.days} days
-        </Text>{' '}
-        and it is yours.
+        {splitHighlight(t('hm.chRules', { n: rules.habitsNeeded, goal: rules.goalDays, days: rules.days, litres: rules.waterMl / 1000, steps: rules.steps.toLocaleString(format.locale) })).map((p, i) =>
+          p.highlight ? (
+            <Text key={i} className="font-bold text-white">
+              {p.text}
+            </Text>
+          ) : (
+            p.text
+          )
+        )}
       </Text>
 
       <Cheque payee={user.name} date={entry ? shortDate(entry.endsOn, format.locale) : null} stamp={stamp} stampColor={reached ? STAMP_GREEN : STAMP_RED} />
@@ -464,21 +505,25 @@ export function OfferCard() {
         <>
           {over ? (
             <Text {...COMPACT_TEXT} className="mb-3 text-center font-semibold" style={{ color: MUTED, fontSize: 13 }}>
-              Your {rules.days} days ended with {fmtKg(lost)} down. You can go again.
+              {t(active === 1 ? 'hm.endedOne' : 'hm.endedMany', { days: rules.days, n: active })}
             </Text>
           ) : null}
-          {profile ? (
+          {paused ? (
+            <Text {...COMPACT_TEXT} className="text-center font-semibold" style={{ color: MUTED, fontSize: 13 }}>
+              {t('hm.pausedStart')}
+            </Text>
+          ) : profile ? (
             // Sliding the whole way is the "are you sure": no second question (a new try after time ran out asks once).
             <SlideToStart key={`${entry?.id ?? 'first'}-${attempt}`} onComplete={over ? () => setAsking(true) : begin} />
           ) : (
-            <Pressable onPress={() => router.push('/complete-profile' as never)} accessibilityRole="button" className="items-center justify-center rounded-full active:opacity-80" style={{ minHeight: 56, backgroundColor: BRAND }}>
-              <Text {...COMPACT_TEXT} className="font-black" style={{ color: INK, fontSize: 16 }}>
-                Complete your profile to start
+            <Pressable onPress={() => router.push('/complete-profile' as never)} accessibilityRole="button" className="items-center justify-center rounded-full active:opacity-80" style={{ minHeight: 56, backgroundColor: BRAND, ...(indic ? { paddingHorizontal: 18, paddingVertical: 8 } : null) }}>
+              <Text {...COMPACT_TEXT} className={`font-black ${indic ? 'text-center' : ''}`} style={{ color: INK, fontSize: indic ? 14.5 : 16 }}>
+                {t('hm.completeToStart')}
               </Text>
             </Pressable>
           )}
           <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 10 }}>
-            {finishers}
+            {others}
           </Text>
         </>
       ) : (
@@ -486,19 +531,24 @@ export function OfferCard() {
           <View
             accessible
             accessibilityRole="progressbar"
-            accessibilityLabel={`${fmtKg(lost)} lost of ${rules.goalKg} kilograms. ${reached ? 'Goal reached' : `${left} days left`}`}
+            accessibilityLabel={t('hm.progressA11y', { done: active, goal: rules.goalDays, state: reached ? t('hm.stCompleted') : leftWords })}
             accessibilityValue={{ min: 0, max: 100, now: Math.round(share * 100) }}>
-            <View className="flex-row items-baseline justify-between">
+            <View className={`flex-row items-baseline justify-between ${indic ? 'flex-wrap gap-x-3' : ''}`}>
               <Text {...COMPACT_TEXT}>
-                <DisplayText {...COMPACT_TEXT} style={{ color: GOLD, fontSize: 24, lineHeight: 30 }}>
-                  {fmtKg(lost)}
-                </DisplayText>
-                <Text className="font-bold text-white" style={{ fontSize: 14 }}>
-                  {'  '}down
-                </Text>
+                {splitHighlight(t(active === 1 ? 'hm.habitDaysOne' : 'hm.habitDaysMany', { n: active })).map((p, i) =>
+                  p.highlight ? (
+                    <DisplayText key={i} {...COMPACT_TEXT} style={{ color: GOLD, fontSize: 24, lineHeight: 30 }}>
+                      {p.text}
+                    </DisplayText>
+                  ) : (
+                    <Text key={i} className="font-bold text-white" style={{ fontSize: 14 }}>
+                      {p.text}
+                    </Text>
+                  )
+                )}
               </Text>
               <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: reached ? GOLD : MUTED, fontSize: 13 }}>
-                {reached ? 'Goal reached' : `${fmtKg(Math.max(0, rules.goalKg - lost))} to go · ${left === 0 ? 'last day' : `${left} ${left === 1 ? 'day' : 'days'} left`}`}
+                {reached ? t('hm.stCompleted') : t('hm.toGo', { n: rules.goalDays - active, left: leftWords })}
               </Text>
             </View>
             <View className="overflow-hidden" style={{ height: 8, borderRadius: 4, marginTop: 8, backgroundColor: 'rgba(255,255,255,0.1)' }}>
@@ -506,35 +556,23 @@ export function OfferCard() {
             </View>
           </View>
 
-          <ChatButton label="Message your dietitian" onPress={toChat} />
-          {reached ? <ClaimButton status={claim?.status ?? null} onPress={() => router.push('/claim-prize' as never)} /> : null}
-
-          {reached ? (
-            <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11.5, marginTop: 12 }}>
-              {finishers}
+          {paused ? (
+            <Text {...COMPACT_TEXT} className="font-semibold" style={{ color: MUTED, fontSize: 13, marginTop: 14 }}>
+              {t('hm.pausedRest')}
             </Text>
-          ) : (
-            <Pressable
-              onPress={() => router.navigate({ pathname: '/profile', params: { log: 'weight' } } as never)}
-              accessibilityRole="link"
-              accessibilityLabel="Log your weight in Profile to move the bar"
-              accessibilityHint="Opens Profile with the weight box ready"
-              hitSlop={6}
-              className="items-center justify-center active:opacity-60"
-              style={{ minHeight: 44, marginTop: 2 }}>
-              <Text {...COMPACT_TEXT} className="text-center" style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12.5 }}>
-                <Text style={{ color: BRAND, fontWeight: '700', textDecorationLine: 'underline' }}>Log your weight in Profile</Text> to move the bar.
-              </Text>
-            </Pressable>
-          )}
+          ) : !reached ? (
+            <TodayHabits done={entry.todayHabits} needed={rules.habitsNeeded} />
+          ) : null}
+
+          <ChatButton label={reached ? t('hm.planNext') : t('hm.messageDietitian')} onPress={toChat} />
         </>
       )}
 
       <ConfirmSheet
         visible={asking}
-        title={`Start a new ${rules.days} days?`}
-        message={`Today becomes day 1 and your weight now${profile ? ` (${fmtKg(profile.weightKg)})` : ''} is your new starting point.`}
-        confirmLabel="Start"
+        title={t('hm.startNewTitle', { days: rules.days })}
+        message={t('hm.startNewBody')}
+        confirmLabel={t('home.start')}
         onConfirm={begin}
         onCancel={() => {
           setAsking(false);

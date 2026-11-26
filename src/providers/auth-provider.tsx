@@ -10,7 +10,7 @@ import { clearActiveWorkout } from '@/lib/storage';
 type AuthContextValue = {
   /** false until Firebase has said whether someone is signed in (instant, read from the phone) */
   isReady: boolean;
-  /** Onboarding is shown on every app start while logged out. Reset on each launch. */
+  /** Onboarding (the start screen) is shown on every app start and after every logout. */
   hasOnboarded: boolean;
   session: api.Session | null;
   completeOnboarding: () => Promise<void>;
@@ -23,6 +23,13 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// How requests get the signed-in member's token. Set as soon as this file loads, not in an effect: screens
+// run their effects before this provider's, and after a hot reload would ask the server with no token.
+setTokenProvider(async (fresh) => {
+  await auth.authStateReady();
+  return auth.currentUser ? auth.currentUser.getIdToken(fresh) : null;
+});
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [hasOnboarded, setHasOnboarded] = useState(false);
@@ -31,7 +38,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Firebase keeps the member signed in between launches and tells us whenever that changes:
     // after login, after sign-out, and when the account is removed or disabled.
-    setTokenProvider(async () => (auth.currentUser ? auth.currentUser.getIdToken() : null));
     // A request our API rejects as "not signed in" (e.g. the account was disabled) ends the session.
     setSessionEndedHandler(() => {
       api.signOutNow().catch(() => {});
@@ -40,12 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stop = onAuthStateChanged(auth, (user) => {
       setSession(user ? { user: api.toUser(user) } : null);
       // A workout in progress belongs to one member: never carry it over to the next one.
-      if (!user) clearActiveWorkout().catch(() => {});
+      if (!user) {
+        clearActiveWorkout().catch(() => {});
+        // Logged out, however it happened: begin again from the start screen.
+        setHasOnboarded(false);
+      }
       setIsReady(true);
     });
     return () => {
       stop();
-      setTokenProvider(null);
       setSessionEndedHandler(null);
     };
   }, []);

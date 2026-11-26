@@ -2,6 +2,7 @@ import Svg, { Circle, G, Path } from 'react-native-svg';
 import { Pressable, Text, View } from 'react-native';
 
 import { DisplayText } from '@/components/display-text';
+import { useLanguage, useT } from '@/providers/language-provider';
 
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const INK = '#050a07';
@@ -26,18 +27,20 @@ function Footprints({ color }: { color: string }) {
 
 /** Steps tile: today's steps against the goal. */
 export function StepsTile({ steps, goal, locale, onPress }: { steps: number | null; goal: number; locale: string; onPress?: () => void }) {
+  const t = useT();
   const count = steps == null ? '–' : steps.toLocaleString(locale);
+  const spoken = steps == null ? t('hm.stepsNA') : t('hm.stepsOfGoalToday', { count, goal: goal.toLocaleString(locale) });
   return (
     <Pressable
       onPress={onPress}
       disabled={!onPress}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={`${steps == null ? 'Steps not available' : `${count} of ${goal.toLocaleString(locale)} steps today`}${onPress ? '. Open steps history' : ''}`}
+      accessibilityLabel={onPress ? `${spoken}. ${t('hm.openStepsHistory')}` : spoken}
       className="flex-1 justify-between rounded-3xl p-4 active:opacity-80"
       style={{ minHeight: 150, backgroundColor: '#d2f5dd' }}>
       <View className="flex-row items-start justify-between">
-        <DisplayText {...COMPACT_TEXT} className="text-lg text-ink">
-          Steps
+        <DisplayText {...COMPACT_TEXT} className="shrink text-lg text-ink">
+          {t('hm.steps')}
         </DisplayText>
         <View style={{ opacity: 0.35 }}>
           <Footprints color={INK} />
@@ -48,7 +51,7 @@ export function StepsTile({ steps, goal, locale, onPress }: { steps: number | nu
           {count}
         </DisplayText>
         <Text {...COMPACT_TEXT} className="text-sm font-semibold text-ink/80">
-          Steps
+          {t('hm.steps')}
         </Text>
       </View>
     </Pressable>
@@ -57,6 +60,8 @@ export function StepsTile({ steps, goal, locale, onPress }: { steps: number | nu
 
 /** Goals tile: how much of today's plan is done, as a pill track with a knob and the percentage inside. */
 export function GoalsTile({ percent }: { percent: number | null }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const value = percent ?? 0;
   const TRACK_W = 112;
   const TRACK_H = 34;
@@ -66,17 +71,17 @@ export function GoalsTile({ percent }: { percent: number | null }) {
     <View className="flex-1 justify-between rounded-3xl p-4" style={{ minHeight: 150, backgroundColor: '#58cf7a' }}>
       <View>
         <DisplayText {...COMPACT_TEXT} className="text-lg text-ink">
-          My Goals
+          {t('hm.myGoals')}
         </DisplayText>
-        <Text {...COMPACT_TEXT} className="mt-1 text-xs font-semibold leading-4 text-ink/80">
-          Keep it up, you can achieve your goals.
+        <Text {...COMPACT_TEXT} className="mt-1 text-xs font-semibold leading-4 text-ink/80" style={indic ? { lineHeight: 18, marginBottom: 8 } : undefined}>
+          {t('hm.keepItUp')}
         </Text>
       </View>
       <View
         accessible
         accessibilityRole="progressbar"
-        accessibilityLabel="Today's plan progress"
-        accessibilityValue={{ min: 0, max: 100, now: value, text: percent == null ? 'Not available' : `${value} percent` }}
+        accessibilityLabel={t('hm.planProgress')}
+        accessibilityValue={{ min: 0, max: 100, now: value, text: percent == null ? t('hm.notAvailable') : t('hm.percent', { n: value }) }}
         className="items-end">
         <View
           className="justify-center"
@@ -135,6 +140,7 @@ const arc = (from: number, to: number) => {
 
 /** Donut of three arcs with round ends. Each arc fills with that item's progress; a numbered badge sits on each. */
 function Donut({ items, percent }: { items: SummaryItem[]; percent: number | null }) {
+  const t = useT();
   const sector = 360 / items.length;
   return (
     <View style={{ width: SIZE, height: SIZE, alignItems: 'center', justifyContent: 'center' }}>
@@ -180,7 +186,7 @@ function Donut({ items, percent }: { items: SummaryItem[]; percent: number | nul
         {percent == null ? '–' : `${percent}%`}
       </DisplayText>
       <Text {...COMPACT_TEXT} className="text-[11px] text-muted">
-        today
+        {t('hm.todayLower')}
       </Text>
     </View>
   );
@@ -188,10 +194,13 @@ function Donut({ items, percent }: { items: SummaryItem[]; percent: number | nul
 
 /** Large card: legend on the left, donut on the right. */
 export function HomeSummaryCard({ items, percent }: { items: SummaryItem[]; percent: number | null }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   return (
     <View
       accessible
-      accessibilityLabel={`Today's progress${percent == null ? '' : `, ${percent} percent`}. ${items
+      // i18n-ignore: whole sentences from t(), listed one after another
+      accessibilityLabel={`${percent == null ? t('hm.todayProgress') : t('hm.todayProgressPercent', { n: percent })}. ${items
         .map((i) => `${i.label}: ${i.value}`)
         .join('. ')}`}
       className="mx-5 mb-5 flex-row items-center justify-between gap-2 rounded-3xl border border-white/5 bg-card py-5 pl-5 pr-3">
@@ -204,7 +213,7 @@ export function HomeSummaryCard({ items, percent }: { items: SummaryItem[]; perc
                 {i.value}
               </Text>
             </View>
-            <Text {...COMPACT_TEXT} className="ml-[18px] text-xs text-muted" numberOfLines={1}>
+            <Text {...COMPACT_TEXT} className="ml-[18px] text-xs text-muted" numberOfLines={indic ? 2 : 1}>
               {i.label}
             </Text>
           </View>

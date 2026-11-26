@@ -12,6 +12,7 @@ import { DisplayText } from '@/components/display-text';
 import { BottomTabInset } from '@/constants/theme';
 import { getMyChat, sendMyMessage, type ChatWindow, type MyChat } from '@/lib/chat-api';
 import { messageFrom } from '@/lib/http';
+import { useLanguage } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
@@ -29,6 +30,9 @@ export default function DietScreen() {
  * Until a dietitian is assigned there is nobody to write to, so the screen says what is missing instead.
  */
 function DietitianChat() {
+  const { t, language } = useLanguage();
+  // The other languages run longer and taller than English.
+  const indic = language !== 'en';
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const [info, setInfo] = useState<Pick<MyChat, 'coaching' | 'dietitian'> | null>(null);
@@ -46,7 +50,7 @@ function DietitianChat() {
     }
   }, []);
 
-  const name = info?.dietitian?.name ?? 'Your dietitian';
+  const name = info?.dietitian?.name ?? t('hm.yourDietitian');
   const waiting = info && !info.dietitian;
   const top = insets.top + (isWeb ? WEB_TOP_BAR : 8);
   const bottom = isWeb ? insets.bottom : insets.bottom + BottomTabInset;
@@ -59,30 +63,29 @@ function DietitianChat() {
           <View className="items-center justify-center" style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(61,220,104,0.12)' }}>
             <SymbolView name={{ ios: 'bubble.left.and.bubble.right.fill', android: 'forum', web: 'forum' }} tintColor={BRAND} size={34} />
           </View>
-          <DisplayText {...COMPACT_TEXT} className="mt-5 text-center text-[26px] leading-8 tracking-tight text-white">
-            Chat with your dietitian
+          <DisplayText {...COMPACT_TEXT} className="mt-5 text-center text-[26px] leading-8 tracking-tight text-white" style={indic ? { lineHeight: 38 } : undefined}>
+            {t('tabs.chat')}
           </DisplayText>
           <Text {...COMPACT_TEXT} className="mt-2 text-center text-[15px] leading-6 text-muted">
-            {info.coaching.status === 'not_shared'
-              ? 'Complete your fitness profile and turn on sharing. A dietitian will then be assigned to you, and you can chat with them here.'
-              : 'A dietitian will be assigned to you soon. You can chat with them here as soon as they are.'}
+            {info.coaching.status === 'not_shared' ? t('hm.chatNotShared') : t('hm.chatSoon')}
           </Text>
           <CompleteProfileButton coaching={info.coaching} />
           <Pressable onPress={() => void load().catch(() => {})} accessibilityRole="button" className="mt-3 min-h-11 justify-center active:opacity-60">
             <Text {...COMPACT_TEXT} className="text-sm font-bold text-brand">
-              Check again
+              {t('hm.checkAgain')}
             </Text>
           </Pressable>
         </View>
       ) : (
         <ChatThread
           role="member"
+          watchUrgent
           peer={info?.dietitian ?? null}
           load={load}
           send={sendMyMessage}
           bottomInset={bottom}
-          emptyTitle={`Say hello to ${name}`}
-          emptyText="Ask about your meals, your plan or anything you are unsure of. They will get a notification."
+          emptyTitle={t('hm.sayHello', { name })}
+          emptyText={t('hm.chatEmpty')}
           header={(status) => (
             <View className="flex-row items-center px-5" style={{ gap: 12, paddingTop: top, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' }}>
               {info ? (
@@ -94,11 +97,11 @@ function DietitianChat() {
                 <ActivityIndicator color={BRAND} />
               )}
               <View className="flex-1">
-                <DisplayText {...COMPACT_TEXT} accessibilityRole="header" numberOfLines={1} className="text-[22px] leading-7 tracking-tight text-white">
+                <DisplayText {...COMPACT_TEXT} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit={indic} className="text-[22px] leading-7 tracking-tight text-white" style={indic ? { lineHeight: 32 } : undefined}>
                   {name}
                 </DisplayText>
-                <Text {...COMPACT_TEXT} numberOfLines={1} accessibilityLiveRegion="polite" className={`text-xs ${status.online || status.typing ? 'font-bold text-brand' : 'text-muted'}`}>
-                  {error && !info ? error : statusLine(status, 'Your dietitian')}
+                <Text {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} accessibilityLiveRegion="polite" className={`text-xs ${status.online || status.typing ? 'font-bold text-brand' : 'text-muted'}`}>
+                  {error && !info ? error : statusLine(status, t('hm.yourDietitian'), t)}
                 </Text>
               </View>
             </View>

@@ -5,14 +5,16 @@ import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 import { BodyAvatar } from '@/components/body-avatar';
-import { CompleteProfileButton, DIET_AFTER_PROFILE } from '@/components/complete-profile-button';
+import { CompleteProfileButton, DIET_AFTER_PROFILE_KEY } from '@/components/complete-profile-button';
 import { bmi } from '@/lib/body';
 import { dayCounts } from '@/lib/day-plan';
-import { MEAL_LABEL, type DayItem, type MealType, type MyDay } from '@/lib/fitness-api';
+import { MEAL_LABEL_KEY, type DayItem, type MealType, type MyDay } from '@/lib/fitness-api';
+import { splitHighlight } from '@/lib/i18n';
 import { emptyPlanCopy } from '@/lib/plan-copy';
 import { calorieSummary, nextTask } from '@/lib/today-tasks';
 import { formatWater } from '@/lib/water';
-import { SLOT_LABEL, SLOT_ORDER } from '@/lib/wellness-api';
+import { SLOT_KEY, SLOT_ORDER } from '@/lib/wellness-api';
+import { useLanguage, useT } from '@/providers/language-provider';
 import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
@@ -27,14 +29,17 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 const GLASS_ML = 250;
 const PHOTO_TYPES: MealType[] = ['breakfast', 'lunch', 'snack', 'dinner'];
 
+type Part = 'workout' | 'meals' | 'photos' | 'water' | 'steps';
+
 /** Which part of the day is open. One at a time, so the day stays a short list. */
-const OpenPart = createContext<{ open: string | null; setOpen: (title: string | null) => void }>({ open: null, setOpen: () => {} });
+const OpenPart = createContext<{ open: Part | null; setOpen: (part: Part | null) => void }>({ open: null, setOpen: () => {} });
 
 /**
  * One part of the day as a row in the day's list: its icon, its name and where it stands. Tapping the row
  * opens it in place to show the detail and the things to do; opening one closes the one that was open.
  */
 function Section({
+  part,
   icon,
   color,
   title,
@@ -43,6 +48,7 @@ function Section({
   first,
   children,
 }: {
+  part: Part;
   icon: SymbolViewProps['name'];
   color: string;
   title: string;
@@ -52,15 +58,16 @@ function Section({
   first?: boolean;
   children: ReactNode;
 }) {
+  const t = useT();
   const { open, setOpen } = useContext(OpenPart);
-  const shown = open === title;
+  const shown = open === part;
   return (
     <View style={first ? null : { borderTopWidth: 1, borderTopColor: HAIRLINE }}>
       <Pressable
-        onPress={() => setOpen(shown ? null : title)}
+        onPress={() => setOpen(shown ? null : part)}
         accessibilityRole="button"
         accessibilityState={{ expanded: shown }}
-        accessibilityLabel={`${title}${done ? ', done' : ''}${status ? `, ${status}` : ''}`}
+        accessibilityLabel={[title, done ? t('hm.doneLower') : null, status].filter(Boolean).join(', ')}
         className="flex-row items-center active:opacity-60"
         style={{ gap: 12, minHeight: 66, paddingHorizontal: 16 }}>
         <View
@@ -82,7 +89,7 @@ function Section({
           {/* the number is always on the row, so nothing has to be opened to see how the day stands */}
           {done || status ? (
             <Text {...COMPACT_TEXT} numberOfLines={1} className="font-semibold" style={{ fontSize: 13, marginTop: 1, color: done ? color : MUTED }}>
-              {done ? (status ? `Done · ${status}` : 'Done') : status}
+              {done ? (status ? t('hm.doneStatus', { status }) : t('hm.done')) : status}
             </Text>
           ) : null}
         </View>
@@ -117,30 +124,31 @@ function Tick({ done }: { done: boolean }) {
 }
 
 function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
-  const t = day.training;
+  const training = day.training;
   const icon = { ios: 'dumbbell', android: 'fitness_center', web: 'fitness_center' } as const;
-  if (!t) {
+  if (!training) {
     return (
-      <Section first icon={icon} color={BRAND} title="Workout">
+      <Section part="workout" first icon={icon} color={BRAND} title={t('hm.workout')}>
         <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
-          {day.coaching.status === 'accepted' ? 'No workout planned for today.' : emptyPlanCopy(day.coaching, false).line}
+          {day.coaching.status === 'accepted' ? t('hm.noWorkoutDay') : emptyPlanCopy(day.coaching, false, t).line}
         </Text>
         <CompleteProfileButton coaching={day.coaching} />
       </Section>
     );
   }
-  const lines = (t.instructions ?? '')
+  const lines = (training.instructions ?? '')
     .split(/\r?\n/)
     .map((l) => l.trim().replace(/^[-•*]\s*/, ''))
     .filter(Boolean);
   return (
-    <Section first icon={icon} color={BRAND} title="Workout" status={`${t.title} · ${t.durationMin} min`} done={t.done}>
-      <Text {...COMPACT_TEXT} className={`font-bold ${t.done ? 'text-muted' : 'text-white'}`} style={{ fontSize: 20, lineHeight: 26 }}>
-        {t.title}
+    <Section part="workout" first icon={icon} color={BRAND} title={t('hm.workout')} status={t('hm.titleMin', { title: training.title, min: training.durationMin })} done={training.done}>
+      <Text {...COMPACT_TEXT} className={`font-bold ${training.done ? 'text-muted' : 'text-white'}`} style={{ fontSize: 20, lineHeight: 26 }}>
+        {training.title}
       </Text>
       <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 13, marginTop: 4 }}>
-        {t.durationMin} min · {t.kcal} kcal{lines.length ? ` · ${lines.length} steps` : ''}
+        {lines.length ? t('hm.minKcalSteps', { min: training.durationMin, kcal: training.kcal, n: lines.length }) : t('hm.minKcal', { min: training.durationMin, kcal: training.kcal })}
       </Text>
 
       {lines.length ? (
@@ -149,11 +157,11 @@ function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) 
           hitSlop={6}
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
-          accessibilityLabel={open ? 'Hide exercises' : 'Show exercises'}
+          accessibilityLabel={open ? t('hm.hideExercises') : t('hm.showExercises')}
           className="flex-row items-center self-start active:opacity-60"
           style={{ gap: 6, minHeight: 40 }}>
           <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
-            {open ? 'Hide exercises' : 'Show exercises'}
+            {open ? t('hm.hideExercises') : t('hm.showExercises')}
           </Text>
           <SymbolView name={open ? { ios: 'chevron.up', android: 'expand_less', web: 'expand_less' } : { ios: 'chevron.down', android: 'expand_more', web: 'expand_more' }} tintColor={BRAND} size={11} />
         </Pressable>
@@ -171,16 +179,16 @@ function WorkoutSection({ day, onStart }: { day: MyDay; onStart?: () => void }) 
           ))
         : null}
 
-      {!t.done && onStart ? (
+      {!training.done && onStart ? (
         <Pressable
           onPress={onStart}
           accessibilityRole="button"
-          accessibilityLabel="Start workout"
+          accessibilityLabel={t('hm.startWorkout')}
           className="flex-row items-center justify-center rounded-full bg-brand active:opacity-80"
           style={{ gap: 8, minHeight: 52, marginTop: lines.length ? 6 : 14 }}>
           <SymbolView name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }} tintColor={INK} size={15} />
           <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 16 }}>
-            Start workout
+            {t('hm.startWorkout')}
           </Text>
         </Pressable>
       ) : null}
@@ -204,29 +212,31 @@ function MealsSection({
   canTick: boolean;
   onToggle: (i: DayItem) => void;
 }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const slots = SLOT_ORDER.map((slot) => ({ slot, items: day.diet.items.filter((i) => i.mealSlot === slot) })).filter((s) => s.items.length > 0);
   const { planned, ticked } = calorieSummary(day.diet.items);
   const icon = { ios: 'fork.knife', android: 'restaurant', web: 'restaurant' } as const;
   if (slots.length === 0) {
     return (
-      <Section first={first} icon={icon} color={MEALS} title="Meals">
+      <Section part="meals" first={first} icon={icon} color={MEALS} title={t('hm.meals')}>
         <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
           {day.coaching.status === 'accepted'
-            ? 'No diet plan has been added for today yet.'
+            ? t('hm.noDietToday')
             : day.coaching.status === 'not_shared'
-              ? DIET_AFTER_PROFILE
-              : emptyPlanCopy(day.coaching, false).line}
+              ? t(DIET_AFTER_PROFILE_KEY)
+              : emptyPlanCopy(day.coaching, false, t).line}
         </Text>
       </Section>
     );
   }
   const allDone = day.diet.done >= day.diet.total;
   return (
-    <Section first={first} icon={icon} color={MEALS} title="Meals" status={`${day.diet.done} of ${day.diet.total}`} done={allDone}>
+    <Section part="meals" first={first} icon={icon} color={MEALS} title={t('hm.meals')} status={t('hm.xOfY', { done: day.diet.done, total: day.diet.total })} done={allDone}>
       {slots.map(({ slot, items }, s) => (
         <View key={slot} style={{ marginTop: s === 0 ? 0 : 10 }}>
-          <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: 1, marginBottom: 2 }}>
-            {SLOT_LABEL[slot]}
+          <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 11, letterSpacing: indic ? 0 : 1, marginBottom: 2 }}>
+            {t(SLOT_KEY[slot])}
           </Text>
           {items.map((item, i) => {
             const busy = pending.has(item.id);
@@ -237,7 +247,7 @@ function MealsSection({
                 disabled={busy || !canTick}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: item.done, busy }}
-                accessibilityLabel={`${SLOT_LABEL[slot]} ${item.title}${item.calories ? `, ${item.calories} calories` : ''}, ${item.done ? 'done' : 'not done'}`}
+                accessibilityLabel={[`${t(SLOT_KEY[slot])} ${item.title}`, item.calories ? t('hm.calories', { n: item.calories }) : null, t(item.done ? 'hm.doneLower' : 'hm.notDone')].filter(Boolean).join(', ')}
                 className="flex-row items-center active:opacity-70"
                 style={{ gap: 12, minHeight: 56, paddingVertical: 8, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: HAIRLINE }}>
                 <Tick done={item.done} />
@@ -267,7 +277,15 @@ function MealsSection({
             <View style={{ height: 6, borderRadius: 3, width: `${Math.min(100, (ticked / planned) * 100)}%`, backgroundColor: MEALS }} />
           </View>
           <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 6 }}>
-            <Text className="font-bold text-white">{ticked.toLocaleString(locale)}</Text> of {planned.toLocaleString(locale)} kcal eaten
+            {splitHighlight(t('hm.eatenOf', { eaten: ticked.toLocaleString(locale), planned: planned.toLocaleString(locale) })).map((p, i) =>
+              p.highlight ? (
+                <Text key={i} className="font-bold text-white">
+                  {p.text}
+                </Text>
+              ) : (
+                p.text
+              )
+            )}
           </Text>
         </View>
       ) : null}
@@ -277,12 +295,13 @@ function MealsSection({
 
 /** One line of the water explanation: what the number is, then the number. */
 function WaterFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  const indic = useLanguage().language !== 'en';
   return (
     <View accessible accessibilityLabel={`${label}: ${value}`}>
-      <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: 10, letterSpacing: 1.1 }}>
+      <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: indic ? 11 : 10, letterSpacing: indic ? 0 : 1.1 }}>
         {label}
       </Text>
-      <Text {...COMPACT_TEXT} numberOfLines={1} adjustsFontSizeToFit className="font-bold" style={{ fontSize: strong ? 28 : 17, lineHeight: strong ? 34 : 23, color: strong ? WATER : '#ffffff' }}>
+      <Text {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit className="font-bold" style={{ fontSize: strong ? 28 : 17, lineHeight: strong ? 34 : indic ? 25 : 23, color: strong ? WATER : '#ffffff' }}>
         {value}
       </Text>
     </View>
@@ -302,6 +321,7 @@ function WaterSection({
   onDrink?: (ml: number) => void;
   onUndo?: () => void;
 }) {
+  const t = useT();
   const { totalMl, goalMl } = day.water;
   const hasGoal = goalMl > 0;
   const done = hasGoal && totalMl >= goalMl;
@@ -312,10 +332,11 @@ function WaterSection({
   const bmiValue = profile?.weightKg && profile?.heightCm ? bmi(profile.weightKg, profile.heightCm) : null;
   return (
     <Section
+      part="water"
       icon={{ ios: 'drop', android: 'water_drop', web: 'water_drop' }}
       color={WATER}
-      title="Water"
-      status={hasGoal ? `${formatWater(totalMl)} of ${formatWater(goalMl)}` : formatWater(totalMl)}
+      title={t('hm.water')}
+      status={hasGoal ? t('hm.xOfY', { done: formatWater(totalMl), total: formatWater(goalMl) }) : formatWater(totalMl)}
       done={done}>
       {/* The same body as on Home: it fills from the feet up as the day's water goal fills. */}
       <View className="flex-row items-center" style={{ gap: 16 }}>
@@ -326,18 +347,18 @@ function WaterSection({
           color="#38e1f5"
           height={230}
           maxWidth={130}
-          label={`Body filled ${percent} percent with water`}
+          label={t('hm.bodyFilledA11y', { percent })}
         />
         <View className="flex-1" style={{ gap: 12 }}>
-          <WaterFact strong label="Drunk so far" value={formatWater(totalMl)} />
+          <WaterFact strong label={t('hm.drunk')} value={formatWater(totalMl)} />
           {hasGoal ? (
             <>
-              <WaterFact label="Goal for the day" value={formatWater(goalMl)} />
-              <WaterFact label={done ? 'Goal reached' : 'Still to drink'} value={done ? `${percent}%` : `${formatWater(left)} · about ${glassesLeft} ${glassesLeft === 1 ? 'glass' : 'glasses'}`} />
+              <WaterFact label={t('hm.dayGoal')} value={formatWater(goalMl)} />
+              <WaterFact label={done ? t('hm.goalReached') : t('hm.stillToDrink')} value={done ? `${percent}%` : t(glassesLeft === 1 ? 'hm.leftGlassOne' : 'hm.leftGlassMany', { water: formatWater(left), n: glassesLeft })} />
             </>
           ) : null}
           <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, lineHeight: 17 }}>
-            {done ? 'The body is full: you drank everything planned for this day.' : 'The body fills as you drink. A full body means the goal is reached.'}
+            {done ? t('hm.bodyFull') : t('hm.bodyFills')}
           </Text>
         </View>
       </View>
@@ -348,19 +369,19 @@ function WaterSection({
           onPress={() => onDrink?.(GLASS_ML)}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel={`Add ${GLASS_ML} millilitres of water`}
+          accessibilityLabel={t('hm.addWaterA11y', { ml: GLASS_ML })}
           className="flex-1 flex-row items-center justify-center rounded-full active:opacity-80"
           style={{ gap: 6, minHeight: 48, backgroundColor: WATER, opacity: busy ? 0.6 : 1 }}>
           <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={INK} size={13} />
           <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 15 }}>
-            1 glass
+            {t('hm.oneGlass')}
           </Text>
         </Pressable>
         <Pressable
           onPress={() => onDrink?.(500)}
           disabled={busy}
           accessibilityRole="button"
-          accessibilityLabel="Add 500 millilitres of water"
+          accessibilityLabel={t('hm.addWaterA11y', { ml: 500 })}
           className="items-center justify-center rounded-full bg-card-2 active:opacity-70"
           style={{ minHeight: 48, paddingHorizontal: 18, opacity: busy ? 0.6 : 1 }}>
           <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 14, color: WATER }}>
@@ -372,11 +393,11 @@ function WaterSection({
             onPress={onUndo}
             disabled={busy}
             accessibilityRole="button"
-            accessibilityLabel={`Undo last drink, ${lastDrinkMl} millilitres`}
+            accessibilityLabel={t('hm.undoLastMl', { ml: lastDrinkMl })}
             className="items-center justify-center rounded-full bg-card-2 active:opacity-70"
             style={{ minHeight: 48, paddingHorizontal: 16, opacity: busy ? 0.6 : 1 }}>
             <Text {...COMPACT_TEXT} className="font-bold text-muted" style={{ fontSize: 14 }}>
-              Undo
+              {t('hm.undo')}
             </Text>
           </Pressable>
         ) : null}
@@ -388,9 +409,11 @@ function WaterSection({
 }
 
 function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) => void }) {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const count = day.meals.length;
   return (
-    <Section icon={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title="Meal photos" status={count > 0 ? `${count} added` : onAdd ? 'For your coach' : 'None'}>
+    <Section part="photos" icon={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }} color={BRAND} title={t('hm.mealPhotos')} status={count > 0 ? t('hm.photosAdded', { n: count }) : onAdd ? t('hm.forCoach') : t('hm.none')}>
       <View className="flex-row" style={{ gap: 10 }}>
         {PHOTO_TYPES.map((type) => {
           const mine = day.meals.filter((m) => m.mealType === type);
@@ -401,7 +424,7 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) =>
               onPress={() => onAdd?.(type)}
               disabled={!onAdd}
               accessibilityRole={onAdd ? 'button' : 'image'}
-              accessibilityLabel={`${MEAL_LABEL[type]}: ${mine.length ? `${mine.length} added${onAdd ? ', add another' : ''}` : onAdd ? 'add a photo' : 'no photo'}`}
+              accessibilityLabel={t(mine.length ? (onAdd ? 'hm.photoA11yMore' : 'hm.photoA11yAdded') : onAdd ? 'hm.photoA11yAdd' : 'hm.photoA11yNone', { meal: t(MEAL_LABEL_KEY[type]), n: mine.length })}
               className="flex-1 active:opacity-70">
               <View
                 className="items-center justify-center overflow-hidden"
@@ -440,8 +463,8 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) =>
                   </View>
                 ) : null}
               </View>
-              <Text {...COMPACT_TEXT} className={`text-center font-semibold ${shot ? 'text-white' : 'text-muted'}`} style={{ fontSize: 12, marginTop: 6 }} numberOfLines={1}>
-                {MEAL_LABEL[type]}
+              <Text {...COMPACT_TEXT} className={`text-center font-semibold ${shot ? 'text-white' : 'text-muted'}`} style={{ fontSize: indic ? 11 : 12, marginTop: 6 }} numberOfLines={indic && t(MEAL_LABEL_KEY[type]).includes(' ') ? 2 : 1} adjustsFontSizeToFit={indic}>
+                {t(MEAL_LABEL_KEY[type])}
               </Text>
             </Pressable>
           );
@@ -452,31 +475,40 @@ function PhotosSection({ day, onAdd }: { day: MyDay; onAdd?: (type: MealType) =>
 }
 
 function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onOpen?: () => void }) {
+  const t = useT();
   const { stepsDone } = dayCounts(day);
   const { value, goal } = day.steps;
+  const spokenCount = value == null ? t('hm.notCounted') : value.toLocaleString(locale);
+  const spoken = goal > 0 ? t('hm.stepsA11yOf', { count: spokenCount, goal: goal.toLocaleString(locale) }) : t('hm.stepsA11y', { count: spokenCount });
+  const count = value == null ? '–' : value.toLocaleString(locale);
   const ratio = value != null && goal > 0 ? Math.min(1, value / goal) : 0;
   return (
     <Pressable
       onPress={onOpen}
       disabled={!onOpen}
       accessibilityRole={onOpen ? 'button' : 'text'}
-      accessibilityLabel={`Steps, ${value == null ? 'not counted' : value.toLocaleString(locale)}${goal > 0 ? ` of ${goal.toLocaleString(locale)}` : ''}${onOpen ? '. Opens steps' : ''}`}
+      accessibilityLabel={onOpen ? `${spoken}. ${t('hm.opensSteps')}` : spoken}
       className="active:opacity-80">
       <Section
+        part="steps"
         icon={{ ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' }}
         color={STEPS}
-        title="Steps"
-        status={value == null ? 'Not counted yet' : goal > 0 ? `${value.toLocaleString(locale)} of ${goal.toLocaleString(locale)}` : value.toLocaleString(locale)}
+        title={t('hm.steps')}
+        status={value == null ? t('hm.notCountedYet') : goal > 0 ? t('hm.xOfY', { done: value.toLocaleString(locale), total: goal.toLocaleString(locale) }) : value.toLocaleString(locale)}
         done={stepsDone}>
         <View className="flex-row items-end justify-between">
           <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 28, lineHeight: 34 }}>
-            {value == null ? '–' : value.toLocaleString(locale)}
-            {goal > 0 ? (
-              <Text className="font-semibold text-muted" style={{ fontSize: 15 }}>
-                {' '}
-                of {goal.toLocaleString(locale)}
-              </Text>
-            ) : null}
+            {goal > 0
+              ? splitHighlight(t('hm.stepsBig', { count, goal: goal.toLocaleString(locale) })).map((p, i) =>
+                  p.highlight ? (
+                    p.text
+                  ) : (
+                    <Text key={i} className="font-semibold text-muted" style={{ fontSize: 15 }}>
+                      {p.text}
+                    </Text>
+                  )
+                )
+              : count}
           </Text>
           {onOpen ? <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} tintColor={MUTED} size={14} /> : null}
         </View>
@@ -485,7 +517,7 @@ function StepsSection({ day, locale, onOpen }: { day: MyDay; locale: string; onO
         </View>
         {onOpen ? (
           <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, marginTop: 8 }}>
-            {value == null ? 'Not synced yet. Tap to open.' : 'Counted by your phone. Tap for history.'}
+            {value == null ? t('hm.notSynced') : t('hm.countedByPhone')}
           </Text>
         ) : null}
       </Section>
@@ -514,14 +546,14 @@ export type ChecklistProps = {
   plain?: boolean;
 };
 
-const PART_OF = { workout: 'Workout', meal: 'Meals', water: 'Water', steps: 'Steps' } as const;
+const PART_OF = { workout: 'workout', meal: 'meals', water: 'water', steps: 'steps' } as const;
 
 /**
  * The day as one list: workout, meals, meal photos, water, steps. Each is a row that opens in place.
  * The first thing still to do starts open; when everything is done, all rows start closed.
  */
 export function Checklist({ day, locale, pending, onToggle, canTick = true, onStart, onDrink, onUndoDrink, waterBusy = false, lastDrinkMl = null, onOpenSteps, onAddPhoto, hideWorkout = false, plain = false }: ChecklistProps) {
-  const [open, setOpen] = useState<string | null>(() => {
+  const [open, setOpen] = useState<Part | null>(() => {
     const next = nextTask(day);
     return next && !(hideWorkout && next.kind === 'workout') ? PART_OF[next.kind] : null;
   });

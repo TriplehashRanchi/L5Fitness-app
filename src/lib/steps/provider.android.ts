@@ -38,7 +38,7 @@ async function getStatus(): Promise<StepsStatus> {
 
     await hc.initialize(); // must run before any other call
     const granted = await hc.getGrantedPermissions();
-    const canReadSteps = granted.some((p) => p.accessType === 'read' && p.recordType === 'Steps');
+    const canReadSteps = granted.some((p) => p.accessType === 'read' && p.recordType === 'Steps'); // i18n-ignore: Health Connect's record name
     return canReadSteps ? 'ready' : 'needs-permission';
   } catch {
     return 'unavailable';
@@ -54,7 +54,7 @@ export const stepsProvider: StepsProvider = {
     if (!hc) return 'unavailable';
     try {
       await hc.initialize();
-      await hc.requestPermission([{ accessType: 'read', recordType: 'Steps' }]);
+      await hc.requestPermission([{ accessType: 'read', recordType: 'Steps' }]); // i18n-ignore
     } catch {
       // closed or failed: the status below tells the truth either way
     }
@@ -66,7 +66,7 @@ export const stepsProvider: StepsProvider = {
     if (!hc) return 0;
     // "Aggregate" lets Health Connect add up the steps and remove double counting between apps.
     const result = await hc.aggregateRecord({
-      recordType: 'Steps',
+      recordType: 'Steps', // i18n-ignore
       timeRangeFilter: { operator: 'between', startTime: start.toISOString(), endTime: end.toISOString() },
     });
     return Math.round(result.COUNT_TOTAL ?? 0);

@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,12 +13,13 @@ import { ProfileForm } from '@/components/profile-form';
 export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { step } = useLocalSearchParams<{ step?: string }>();
   return (
     <View className="flex-1" style={{ backgroundColor: GREEN_BG }}>
       <StatusBar style="light" />
       <GreenBackground />
       <View className="flex-1" style={{ paddingTop: insets.top + 8 }}>
-        <ProfileForm mode="setup" editing onDone={() => router.back()} />
+        <ProfileForm mode="setup" editing startAt={step} onDone={() => router.back()} />
       </View>
     </View>
   );

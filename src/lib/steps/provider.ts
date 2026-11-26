@@ -14,7 +14,8 @@ const dayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export const stepsProvider: StepsProvider = {
-  sourceName: 'your health app',
+  sourceName: 'your health app', // i18n-ignore: shown through sourceKey
+  sourceKey: 'act.healthApp',
   getStatus: async () => (fake() ? 'ready' : 'unavailable'),
   requestAccess: async () => (fake() ? 'ready' : 'unavailable'),
   getSteps: async (start) => fake()?.[dayKey(start)] ?? 0,

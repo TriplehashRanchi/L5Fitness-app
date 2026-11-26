@@ -21,13 +21,16 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { DisplayText } from "@/components/display-text";
+import { useDeviceClock } from "@/hooks/use-device-clock";
 import { messageFrom } from "@/lib/http";
+import type { Translate } from "@/lib/i18n";
 import {
   getInbox,
   markRead,
   type AppNotification,
   type Screen,
 } from "@/lib/notifications-api";
+import { useLanguage, useT } from "@/providers/language-provider";
 import { useNotifications } from "@/providers/notifications-provider";
 import { useProfile } from "@/providers/profile-provider";
 
@@ -48,19 +51,19 @@ const GO: Partial<Record<Screen, Href>> = {
 };
 
 /** "5m", "3h", "Yesterday", or the date. */
-function ago(iso: string) {
+function ago(iso: string, t: Translate, locale: string) {
   const minutes = Math.max(
     0,
     Math.round((Date.now() - new Date(iso).getTime()) / 60_000),
   );
-  if (minutes < 1) return "Now";
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return t("care.notifNow");
+  if (minutes < 60) return t("care.notifMinutes", { n: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return t("care.notifHours", { n: hours });
   const days = Math.round(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days}d`;
-  return new Date(iso).toLocaleDateString(undefined, {
+  if (days === 1) return t("common.yesterday");
+  if (days < 7) return t("care.notifDays", { n: days });
+  return new Date(iso).toLocaleDateString(locale, {
     day: "numeric",
     month: "short",
   });
@@ -79,16 +82,20 @@ function Row({
   n,
   open,
   last,
+  locale,
   onPress,
 }: {
   n: AppNotification;
   open: boolean;
   /** The last row of its group: no line under it. */
   last: boolean;
+  locale: string;
   onPress: () => void;
 }) {
+  const { t, language } = useLanguage();
   const admin = n.fromRole === "admin";
-  const sender = admin ? "L5 Fitness" : n.from;
+  // "Your dietitian" is what the server writes when the dietitian has no name.
+  const sender = admin ? "L5 Fitness" : n.from === "Your dietitian" ? t("care.yourDietitian") : n.from; // i18n-ignore
   // What kind of notification this is decides its picture:
   //   a chat message          → a message bubble
   //   something from the gym  → the L5 Fitness logo
@@ -100,7 +107,7 @@ function Row({
         onPress={onPress}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${n.read ? "" : "Unread. "}${sender}. ${n.title}. ${n.body}`}
+        accessibilityLabel={`${n.read ? "" : `${t("care.notifUnread")} `}${sender}. ${n.title}. ${n.body}`}
         className="flex-row items-center active:opacity-70"
         style={{ gap: 12, paddingHorizontal: 12, paddingVertical: 13 }}
       >
@@ -132,13 +139,13 @@ function Row({
             <Text
               {...COMPACT_TEXT}
               className={n.read ? "flex-1 font-semibold text-white" : "flex-1 font-bold text-white"}
-              style={{ fontSize: 15, lineHeight: 20 }}
+              style={{ fontSize: 15, lineHeight: language === "en" ? 20 : 23 }}
               numberOfLines={open ? undefined : 1}
             >
               {n.title}
             </Text>
             <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12 }}>
-              {ago(n.createdAt)}
+              {ago(n.createdAt, t, locale)}
             </Text>
             {!n.read ? (
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: BRAND }} />
@@ -149,7 +156,7 @@ function Row({
               {...COMPACT_TEXT}
               selectable={open}
               ellipsizeMode="tail"
-              style={{ fontSize: 13, lineHeight: 18, marginTop: 2, color: SUBTLE }}
+              style={{ fontSize: 13, lineHeight: language === "en" ? 18 : 20, marginTop: 2, color: SUBTLE }}
               numberOfLines={open ? undefined : 1}
             >
               {n.body}
@@ -171,6 +178,8 @@ function Inbox({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { t, language } = useLanguage();
+  const { format } = useDeviceClock();
   const { role } = useProfile();
   const { refresh, unread } = useNotifications();
   const [items, setItems] = useState<AppNotification[] | null>(null);
@@ -251,7 +260,7 @@ function Inbox({
       {...COMPACT_TEXT}
       accessibilityRole="header"
       className="font-bold uppercase text-muted"
-      style={{ fontSize: 11, letterSpacing: 1.2, marginLeft: 12, marginBottom: 2, marginTop: 10 }}
+      style={{ fontSize: 11, letterSpacing: language === "en" ? 1.2 : 0, marginLeft: 12, marginBottom: 2, marginTop: 10 }}
     >
       {text}
     </Text>
@@ -272,9 +281,11 @@ function Inbox({
           {...COMPACT_TEXT}
           accessibilityRole="header"
           className="text-white"
-          style={{ fontSize: 22, lineHeight: 28 }}
+          style={{ fontSize: 22, lineHeight: 28, flexShrink: 1 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit={language !== "en"}
         >
-          Notifications
+          {t("care.notifTitle")}
         </DisplayText>
         {unread > 0 ? (
           <View
@@ -296,12 +307,12 @@ function Inbox({
             onPress={readAll}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Mark all as read"
+            accessibilityLabel={t("care.notifMarkAllA11y")}
             className="justify-center active:opacity-60"
-            style={{ minHeight: 36 }}
+            style={{ minHeight: 36, flexShrink: 1 }}
           >
-            <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
-              Mark all read
+            <Text {...COMPACT_TEXT} className="text-right font-bold text-brand" style={{ fontSize: 13 }}>
+              {t("care.notifMarkAll")}
             </Text>
           </Pressable>
         ) : null}
@@ -309,7 +320,7 @@ function Inbox({
           onPress={onClose}
           hitSlop={10}
           accessibilityRole="button"
-          accessibilityLabel="Close notifications"
+          accessibilityLabel={t("care.notifClose")}
           className="items-center justify-center rounded-full active:opacity-60"
           style={{
             width: 34,
@@ -346,7 +357,7 @@ function Inbox({
       {items === null && !error ? (
         <View
           style={{ paddingHorizontal: 8, paddingBottom: 14 }}
-          accessibilityLabel="Loading notifications"
+          accessibilityLabel={t("care.notifLoading")}
           accessibilityRole="progressbar"
         >
           {[0, 1, 2].map((i) => (
@@ -413,14 +424,14 @@ function Inbox({
             className="font-bold text-white"
             style={{ fontSize: 16, marginTop: 14 }}
           >
-            You are all caught up
+            {t("care.notifCaughtUp")}
           </Text>
           <Text
             {...COMPACT_TEXT}
             className="text-center text-muted"
             style={{ fontSize: 13, lineHeight: 19, marginTop: 4 }}
           >
-            Messages from your gym and your dietitian will appear here.
+            {t("care.notifEmpty")}
           </Text>
         </View>
       ) : (
@@ -429,13 +440,13 @@ function Inbox({
           contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 12 }}
           showsVerticalScrollIndicator={false}
         >
-          {fresh.length ? heading("New") : null}
+          {fresh.length ? heading(t("care.notifNew")) : null}
           {fresh.map((n, i) => (
-            <Row key={n.id} n={n} open={openId === n.id} last={i === fresh.length - 1} onPress={() => press(n)} />
+            <Row key={n.id} n={n} open={openId === n.id} last={i === fresh.length - 1} locale={format.locale} onPress={() => press(n)} />
           ))}
-          {earlier.length && fresh.length ? heading("Earlier") : null}
+          {earlier.length && fresh.length ? heading(t("care.notifEarlier")) : null}
           {earlier.map((n, i) => (
-            <Row key={n.id} n={n} open={openId === n.id} last={i === earlier.length - 1} onPress={() => press(n)} />
+            <Row key={n.id} n={n} open={openId === n.id} last={i === earlier.length - 1} locale={format.locale} onPress={() => press(n)} />
           ))}
           {more ? (
             <Pressable
@@ -453,7 +464,7 @@ function Inbox({
                   className="font-bold text-brand"
                   style={{ fontSize: 13 }}
                 >
-                  Show older
+                  {t("care.notifOlder")}
                 </Text>
               )}
             </Pressable>
@@ -470,6 +481,7 @@ function Inbox({
  * opened from Settings or a push notification it sits in the same spot without the pointer.
  */
 export function NotificationsPanel() {
+  const t = useT();
   const { inbox, closeInbox: onClose } = useNotifications();
   const visible = inbox.open;
   const insets = useSafeAreaInsets();
@@ -494,7 +506,7 @@ export function NotificationsPanel() {
       >
         <Pressable
           onPress={onClose}
-          accessibilityLabel="Close notifications"
+          accessibilityLabel={t("care.notifClose")}
           accessibilityRole="button"
           style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
         />

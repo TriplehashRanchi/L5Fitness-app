@@ -24,6 +24,8 @@ import { withDeviceSteps } from '@/lib/today-tasks';
 import { SHOW_WORKOUT } from '@/lib/features';
 import { getActivity, type ActivityRange } from '@/lib/fitness-api';
 import { getHistory, type HistoryDay } from '@/lib/wellness-api';
+import type { Key } from '@/lib/i18n';
+import { useLanguage, useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -33,13 +35,14 @@ const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 type Summary = NonNullable<Awaited<ReturnType<typeof getHistory>>['summary']>;
 
 type Mode = 'day' | 'history';
-const MODES: { id: Mode; label: string; icon: { ios: string; android: string; web: string } }[] = [
-  { id: 'day', label: 'Day', icon: { ios: 'calendar', android: 'calendar_today', web: 'calendar_today' } },
-  { id: 'history', label: 'History', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' } },
+const MODES: { id: Mode; labelKey: Key; icon: { ios: string; android: string; web: string } }[] = [
+  { id: 'day', labelKey: 'act.day', icon: { ios: 'calendar', android: 'calendar_today', web: 'calendar_today' } },
+  { id: 'history', labelKey: 'act.history', icon: { ios: 'chart.bar.fill', android: 'bar_chart', web: 'bar_chart' } },
 ];
 
 /** Day or History: the two things this tab does, one at a time. */
 function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  const t = useT();
   return (
     <View className="flex-row rounded-full bg-card" style={{ padding: 3 }} accessibilityRole="tablist">
       {MODES.map((m) => {
@@ -55,7 +58,7 @@ function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
             style={{ minHeight: 38, paddingHorizontal: 14, gap: 6 }}>
             <SymbolView name={m.icon as never} tintColor={on ? INK : '#8fa396'} size={14} />
             <Text {...COMPACT_TEXT} className={`font-bold ${on ? 'text-ink' : 'text-muted'}`} style={{ fontSize: 13 }}>
-              {m.label}
+              {t(m.labelKey)}
             </Text>
           </Pressable>
         );
@@ -71,14 +74,16 @@ function ModeSwitch({ value, onChange }: { value: Mode; onChange: (m: Mode) => v
  * History: the last seven days as a chart, the all-time totals, and the workout logbook.
  */
 function SectionTitle({ children }: { children: string }) {
+  const { language } = useLanguage();
   return (
-    <Text {...COMPACT_TEXT} accessibilityRole="header" className="mx-5 font-bold uppercase text-muted" style={{ fontSize: 12, letterSpacing: 1.2, marginTop: 22, marginBottom: 10 }}>
+    <Text {...COMPACT_TEXT} accessibilityRole="header" className="mx-5 font-bold uppercase text-muted" style={{ fontSize: 12, letterSpacing: language === 'en' ? 1.2 : 0, marginTop: 22, marginBottom: 10 }}>
       {children}
     </Text>
   );
 }
 
 export default function LogsScreen() {
+  const { t, language } = useLanguage();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { now, format, firstWeekday } = useDeviceClock();
@@ -191,8 +196,13 @@ export default function LogsScreen() {
   const header = (
     <View className="pb-3">
       <View className="flex-row items-center justify-between px-5 pt-3" style={{ gap: 12 }}>
-        <DisplayText accessibilityRole="header" className="flex-1 text-[32px] leading-10 tracking-tight text-white" numberOfLines={1}>
-          Activity
+        <DisplayText
+          accessibilityRole="header"
+          className="flex-1 text-[32px] leading-10 tracking-tight text-white"
+          style={language === 'en' ? undefined : { lineHeight: 48 }}
+          numberOfLines={1}
+          adjustsFontSizeToFit>
+          {t('tabs.activity')}
         </DisplayText>
         <ModeSwitch value={mode} onChange={setMode} />
       </View>
@@ -204,10 +214,10 @@ export default function LogsScreen() {
       {dayMessage ? (
         <View accessibilityRole="alert" className="mx-5 mb-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
           <Text className="text-sm font-semibold text-white">{dayMessage}</Text>
-          {day.error && !day.notice ? <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text> : null}
+          {day.error && !day.notice ? <Text className="mt-0.5 text-xs text-muted">{t('act.pullToRefresh')}</Text> : null}
           {day.error && !day.data ? (
             <Pressable onPress={day.reload} accessibilityRole="button" className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
-              <Text className="text-sm font-bold text-ink">Retry</Text>
+              <Text className="text-sm font-bold text-ink">{t('act.retry')}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -218,11 +228,11 @@ export default function LogsScreen() {
         <Pressable
           onPress={() => setPicked(null)}
           accessibilityRole="button"
-          accessibilityLabel="Back to today"
+          accessibilityLabel={t('act.backToToday')}
           className="mx-5 mb-3 self-start justify-center rounded-full active:opacity-70"
           style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
           <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
-            Today
+            {t('common.today')}
           </Text>
         </Pressable>
       ) : null}
@@ -245,11 +255,11 @@ export default function LogsScreen() {
                   onPress={() => setPicked(null)}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel="Back to today"
+                  accessibilityLabel={t('act.backToToday')}
                   className="items-center justify-center rounded-full active:opacity-70"
                   style={{ minHeight: 36, paddingHorizontal: 14, backgroundColor: 'rgba(61,220,104,0.15)' }}>
                   <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 13 }}>
-                    Today
+                    {t('common.today')}
                   </Text>
                 </Pressable>
               )
@@ -286,20 +296,20 @@ export default function LogsScreen() {
           ) : monthError ? (
             <View accessibilityRole="alert" className="mx-5">
               <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 15 }}>
-                The last 30 days could not be loaded
+                {t('act.monthFailed')}
               </Text>
               <Pressable onPress={loadMonth} accessibilityRole="button" className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
                 <Text {...COMPACT_TEXT} className="text-sm font-bold text-ink">
-                  Try again
+                  {t('common.tryAgain')}
                 </Text>
               </Pressable>
             </View>
           ) : null}
           {SHOW_WORKOUT ? (
             <>
-              <SectionTitle>All time</SectionTitle>
+              <SectionTitle>{t('act.allTime')}</SectionTitle>
               {summary ? <HistoryStats summary={summary} locale={format.locale} /> : null}
-              <SectionTitle>Workout log</SectionTitle>
+              <SectionTitle>{t('act.workoutLog')}</SectionTitle>
               <HistoryFilterBar value={filter} onChange={setFilter} />
             </>
           ) : null}
@@ -309,7 +319,7 @@ export default function LogsScreen() {
       {error && mode === 'history' && SHOW_WORKOUT ? (
         <View accessibilityRole="alert" className="mx-5 mt-4 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3">
           <Text className="text-sm font-semibold text-white">{error}</Text>
-          <Text className="mt-0.5 text-xs text-muted">Pull down to refresh and try again.</Text>
+          <Text className="mt-0.5 text-xs text-muted">{t('act.pullToRefresh')}</Text>
         </View>
       ) : null}
     </View>
@@ -358,7 +368,7 @@ export default function LogsScreen() {
                 <SymbolView name={{ ios: 'figure.run', android: 'directions_run', web: 'directions_run' }} tintColor={BRAND} size={28} />
               </View>
               <Text {...COMPACT_TEXT} className="font-bold text-white" style={{ fontSize: 18, marginTop: 14 }}>
-                {filter === 'all' ? 'No workouts yet' : 'Nothing in this period'}
+                {t(filter === 'all' ? 'act.noWorkouts' : 'act.nothingInPeriod')}
               </Text>
               {filter === 'all' ? (
                 <Pressable
@@ -368,13 +378,13 @@ export default function LogsScreen() {
                   style={{ gap: 8, minHeight: 48, paddingHorizontal: 24, marginTop: 16 }}>
                   <SymbolView name={{ ios: 'play.fill', android: 'play_arrow', web: 'play_arrow' }} tintColor={INK} size={14} />
                   <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 15 }}>
-                    Start today’s workout
+                    {t('act.startTodaysWorkout')}
                   </Text>
                 </Pressable>
               ) : (
                 <Pressable onPress={() => setFilter('all')} accessibilityRole="button" className="justify-center active:opacity-60" style={{ minHeight: 44, marginTop: 6 }}>
                   <Text {...COMPACT_TEXT} className="font-bold text-brand" style={{ fontSize: 14 }}>
-                    Show all
+                    {t('act.showAll')}
                   </Text>
                 </Pressable>
               )}

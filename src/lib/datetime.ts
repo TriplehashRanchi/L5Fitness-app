@@ -12,6 +12,8 @@
  *   so DST changes never skip or repeat a day.
  */
 
+import { tr } from '@/lib/i18n';
+
 export type CalendarDay = { year: number; month: number; day: number };
 
 export type ZonedParts = CalendarDay & {
@@ -156,11 +158,12 @@ export function formatLongDate(date: Date, { locale, timeZone }: FormatOptions) 
   );
 }
 
-export function getGreeting(hour: number) {
-  if (hour >= 5 && hour < 12) return 'Good morning';
-  if (hour >= 12 && hour < 17) return 'Good afternoon';
-  if (hour >= 17 && hour < 22) return 'Good evening';
-  return 'Late night grind';
+/** Which greeting fits the hour. Show it with `t(greetingKey(hour))`. */
+export function greetingKey(hour: number) {
+  if (hour >= 5 && hour < 12) return 'common.goodMorning' as const;
+  if (hour >= 12 && hour < 17) return 'common.goodAfternoon' as const;
+  if (hour >= 17 && hour < 22) return 'common.goodEvening' as const;
+  return 'common.lateNight' as const;
 }
 
 /** Milliseconds until the next wall-clock minute starts. */
@@ -170,10 +173,10 @@ export function msUntilNextMinute(now: Date) {
 
 /** "Today", "Yesterday", or "Mon 3 Nov" for a YYYY-MM-DD day key, in the member's language. */
 export function dayLabel(key: string, todayKey: string, locale: string): string {
-  if (key === todayKey) return 'Today';
+  if (key === todayKey) return tr('common.today');
   const [y, m, d] = todayKey.split('-').map(Number);
   const yesterday = new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
-  if (key === yesterday) return 'Yesterday';
+  if (key === yesterday) return tr('common.yesterday');
   return getFormatter(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
     new Date(`${key}T00:00:00Z`)
   );

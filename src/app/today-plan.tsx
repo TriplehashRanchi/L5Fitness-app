@@ -16,6 +16,7 @@ import { formatLongDate, getZonedParts, toDayKey } from '@/lib/datetime';
 import { dayCounts } from '@/lib/day-plan';
 import { withDeviceSteps } from '@/lib/today-tasks';
 import { DAILY_STEP_GOAL } from '@/lib/steps/summary';
+import { useLanguage, useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
@@ -23,6 +24,7 @@ const BAR = 44;
 
 /** Grey placeholder blocks, so nothing jumps when the plan loads. */
 function TodaySkeleton() {
+  const t = useT();
   const reduced = useReducedMotion();
   const o = useSharedValue(0.5);
   useEffect(() => {
@@ -30,7 +32,7 @@ function TodaySkeleton() {
   }, [reduced, o]);
   const style = useAnimatedStyle(() => ({ opacity: o.value }));
   return (
-    <Animated.View style={style} accessibilityLabel="Loading today’s plan" accessibilityRole="progressbar">
+    <Animated.View style={style} accessibilityLabel={t('hm.loadingPlan')} accessibilityRole="progressbar">
       {[220, 170, 280, 160, 250].map((h, i) => (
         <View key={i} className="mx-5 mb-4 rounded-2xl" style={{ height: h * 0.5, backgroundColor: 'rgba(255,255,255,0.05)' }} />
       ))}
@@ -40,6 +42,8 @@ function TodaySkeleton() {
 
 /** Today as a plain checklist, with water and meal photos under it. Starting the workout hands over to Home. */
 export default function TodayPlanScreen() {
+  const { t, language } = useLanguage();
+  const indic = language !== 'en';
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { now, format } = useDeviceClock();
@@ -70,18 +74,17 @@ export default function TodayPlanScreen() {
             onPress={() => router.back()}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Back"
+            accessibilityLabel={t('common.back')}
             className="items-center justify-center rounded-full bg-card active:opacity-70"
             style={{ width: BAR, height: BAR }}>
             <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} tintColor="white" size={16} />
           </Pressable>
           <View className="flex-1">
-            <DisplayText {...COMPACT_TEXT} accessibilityRole="header" className="text-[24px] tracking-tight text-white" numberOfLines={1}>
-              Today’s plan
+            <DisplayText {...COMPACT_TEXT} accessibilityRole="header" className="text-[24px] tracking-tight text-white" numberOfLines={1} adjustsFontSizeToFit={indic} style={indic ? { lineHeight: 34 } : undefined}>
+              {t('hm.todayPlan')}
             </DisplayText>
-            <Text {...COMPACT_TEXT} className="text-xs font-semibold text-muted" numberOfLines={1}>
-              {formatLongDate(now, format)}
-              {dietitian ? ` · Set by ${dietitian}` : ''}
+            <Text {...COMPACT_TEXT} className="text-xs font-semibold text-muted" numberOfLines={indic ? 2 : 1}>
+              {dietitian ? t('hm.dateSetBy', { date: formatLongDate(now, format), name: dietitian }) : formatLongDate(now, format)}
             </Text>
           </View>
         </View>
@@ -93,13 +96,13 @@ export default function TodayPlanScreen() {
             </Text>
             {error && !notice ? (
               <Text {...COMPACT_TEXT} className="mt-0.5 text-xs text-muted">
-                {data ? 'Showing the last saved plan. Check your connection and retry.' : 'Check your connection and try again.'}
+                {data ? t('hm.savedPlan') : t('hm.checkConnection')}
               </Text>
             ) : null}
             {error && !notice ? (
-              <Pressable onPress={reload} accessibilityRole="button" accessibilityLabel="Retry" className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
+              <Pressable onPress={reload} accessibilityRole="button" accessibilityLabel={t('hm.retry')} className="mt-3 min-h-11 self-start justify-center rounded-full bg-brand px-5 active:opacity-80">
                 <Text {...COMPACT_TEXT} className="text-sm font-bold text-ink">
-                  Retry
+                  {t('hm.retry')}
                 </Text>
               </Pressable>
             ) : null}

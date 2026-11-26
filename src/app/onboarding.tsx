@@ -1,4 +1,3 @@
-import { Exo2_900Black, useFonts } from '@expo-google-fonts/exo-2';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -29,13 +28,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { DisplayText } from '@/components/display-text';
+import { splitHighlight } from '@/lib/i18n';
 import { useAuth } from '@/providers/auth-provider';
+import { useLanguage } from '@/providers/language-provider';
 
 // One accent colour, used sparingly: a single headline word, the progress bar and the button.
 const BRAND = '#3ddc68';
 const INK = '#050806';
-/** Wide, heavy sport display face for headlines (loaded in OnboardingScreen). */
-const DISPLAY = 'Exo2_900Black';
 
 /** Image moves slower than the swipe (parallax). Fraction of screen width. */
 const PARALLAX = 0.15;
@@ -47,11 +47,10 @@ const CTA_HEIGHT = 58;
 const SLIDES = [
   {
     image: require('@/assets/onboarding/slide-1.jpg'),
-    tag: 'Train',
-    lead: 'Train like',
-    accent: 'you mean',
-    tail: 'it.',
-    body: 'Coach-built plans that fit your level, from your very first rep to your next PR.',
+    id: 'train',
+    // Word keys, translated when the slide is drawn.
+    title: 'acc.slideTitle',
+    body: 'acc.slideBody',
   },
 ] as const;
 
@@ -63,15 +62,15 @@ function SlideView({
   scrollX,
   width,
   bottomInset,
-  fontReady,
 }: {
   slide: Slide;
   index: number;
   scrollX: SharedValue<number>;
   width: number;
   bottomInset: number;
-  fontReady: boolean;
 }) {
+  const { language, t } = useLanguage();
+  const english = language === 'en';
   const range = [(index - 1) * width, index * width, (index + 1) * width];
 
   const imageStyle = useAnimatedStyle(() => ({
@@ -121,20 +120,27 @@ function SlideView({
       {/* Copy: left-aligned, anchored to the bottom */}
       <Animated.View
         style={[{ position: 'absolute', left: 24, right: 24, bottom: bottomInset + 112 }, copyStyle]}>
-        <Text
+        {/* The headline never waits for its font: DisplayText swaps it in once loaded. */}
+        <DisplayText
           maxFontSizeMultiplier={1.1}
-          numberOfLines={2}
+          numberOfLines={english ? 2 : 3}
           adjustsFontSizeToFit
           minimumFontScale={0.7}
-          style={fontReady ? { fontFamily: DISPLAY } : { fontWeight: '900' }}
-          className="text-[40px] uppercase leading-[44px] text-white">
-          {slide.lead}
-          {'\n'}
-          <Text style={{ color: BRAND }}>{slide.accent}</Text> {slide.tail}
-        </Text>
+          style={{ fontWeight: '900' }}
+          className={`uppercase text-white ${english ? 'text-[40px] leading-[44px]' : 'text-[32px] leading-[48px]'}`}>
+          {splitHighlight(t(slide.title)).map((part, i) =>
+            part.highlight ? (
+              <Text key={i} style={{ color: BRAND }}>
+                {part.text}
+              </Text>
+            ) : (
+              part.text
+            )
+          )}
+        </DisplayText>
 
-        <Text maxFontSizeMultiplier={1.3} className="mt-4 max-w-[310px] text-[15px] leading-[22px] text-white/70">
-          {slide.body}
+        <Text maxFontSizeMultiplier={1.3} className={`mt-4 max-w-[310px] text-[15px] text-white/70 ${english ? 'leading-[22px]' : 'leading-[25px]'}`}>
+          {t(slide.body)}
         </Text>
       </Animated.View>
     </View>
@@ -164,6 +170,8 @@ function WaveChevron({ index, wave, x }: { index: number; wave: SharedValue<numb
 
 /** Last slide: drag the knob across the track to start (or use the screen-reader "activate" action). */
 function SwipeToStart({ onComplete }: { onComplete: () => void }) {
+  const { language, t } = useLanguage();
+  const english = language === 'en';
   const x = useSharedValue(0);
   const maxX = useSharedValue(1);
   const press = useSharedValue(0); // 1 while the knob is held
@@ -221,7 +229,7 @@ function SwipeToStart({ onComplete }: { onComplete: () => void }) {
     <View
       accessible
       accessibilityRole="button"
-      accessibilityLabel="Swipe to start"
+      accessibilityLabel={t('acc.swipeA11y')}
       accessibilityActions={[{ name: 'activate' }]}
       onAccessibilityAction={finish}
       onLayout={(e) => maxX.set(Math.max(1, e.nativeEvent.layout.width - SWIPE_KNOB - SWIPE_PAD * 2))}
@@ -254,9 +262,14 @@ function SwipeToStart({ onComplete }: { onComplete: () => void }) {
       <Animated.View
         pointerEvents="none"
         style={[StyleSheet.absoluteFill, labelStyle]}
-        className="flex-row items-center justify-center">
-        <Text maxFontSizeMultiplier={1.15} numberOfLines={1} className="text-lg font-semibold text-white">
-          Swipe to Start
+        // A longer label keeps clear of the knob on the left and the arrows on the right.
+        className={`flex-row items-center justify-center ${english ? '' : 'px-16'}`}>
+        <Text
+          maxFontSizeMultiplier={1.15}
+          numberOfLines={english ? 1 : 2}
+          adjustsFontSizeToFit={!english}
+          className={`font-semibold text-white ${english ? 'text-lg' : 'shrink text-center text-[15px]'}`}>
+          {t('acc.swipe')}
         </Text>
       </Animated.View>
       <View pointerEvents="none" className="absolute right-6 flex-row items-center">
@@ -293,12 +306,10 @@ function SwipeToStart({ onComplete }: { onComplete: () => void }) {
 }
 
 export default function OnboardingScreen() {
+  const { language, t } = useLanguage();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { completeOnboarding } = useAuth();
-  // Never block the screen on the font: it shows right away and the headline font swaps in once loaded.
-  const [fontsLoaded] = useFonts({ Exo2_900Black });
-
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollX = useSharedValue(0);
   const [index, setIndex] = useState(0);
@@ -347,13 +358,12 @@ export default function OnboardingScreen() {
         style={StyleSheet.absoluteFill}>
         {SLIDES.map((slide, i) => (
           <SlideView
-            key={slide.tag}
+            key={slide.id}
             slide={slide}
             index={i}
             scrollX={scrollX}
             width={width}
             bottomInset={insets.bottom}
-            fontReady={fontsLoaded}
           />
         ))}
       </Animated.ScrollView>
@@ -368,12 +378,12 @@ export default function OnboardingScreen() {
             onPress={() => completeOnboarding()}
             hitSlop={14}
             accessibilityRole="button"
-            accessibilityLabel="Skip intro"
+            accessibilityLabel={t('acc.skipIntro')}
             className="py-1 active:opacity-60">
             <Text
               maxFontSizeMultiplier={1.2}
-              className="text-xs font-bold uppercase tracking-[2px] text-white/85">
-              Skip
+              className={`text-xs font-bold uppercase text-white/85 ${language === 'en' ? 'tracking-[2px]' : ''}`}>
+              {t('common.skip')}
             </Text>
           </Pressable>
         </Animated.View>
@@ -387,7 +397,7 @@ export default function OnboardingScreen() {
         <Pressable
           onPress={goNext}
           accessibilityRole="button"
-          accessibilityLabel={isLast ? 'Get started' : 'Next slide'}
+          accessibilityLabel={t(isLast ? 'acc.getStarted' : 'acc.nextSlide')}
           style={{ height: CTA_HEIGHT }}
           className="w-full flex-row items-center justify-center gap-2.5 overflow-hidden rounded-full active:opacity-85">
           <LinearGradient
@@ -400,8 +410,9 @@ export default function OnboardingScreen() {
           <Text
             maxFontSizeMultiplier={1.15}
             numberOfLines={1}
+            adjustsFontSizeToFit
             className="text-lg font-semibold text-white">
-            Next
+            {t('acc.next')}
           </Text>
           <SymbolView
             name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }}

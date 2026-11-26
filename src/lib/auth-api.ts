@@ -2,11 +2,14 @@
  * Sign-up, login and Google sign-in, all through Firebase Authentication.
  * Our API only checks the token Firebase issues (see lib/http.ts).
  *
- * Apple is not set up yet (see the note on it).
+ * Apple needs "Sign in with Apple" switched on for the app in the Apple Developer account and the Apple provider
+ * switched on in Firebase (Authentication, Sign-in method). Until then the button answers with a plain message.
  */
 import {
   createUserWithEmailAndPassword,
   deleteUser,
+  OAuthProvider,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
@@ -16,6 +19,7 @@ import {
 import { auth } from '@/lib/firebase';
 import { deleteAccountData } from '@/lib/fitness-api';
 import { googleSignIn } from '@/lib/google-sign-in';
+import { tr, type Key } from '@/lib/i18n';
 
 export type AuthProvider = 'password' | 'google' | 'apple';
 
@@ -35,22 +39,22 @@ export class AuthError extends Error {}
 /** The member backed out (closed the Google sheet). Screens should stay quiet, not show an error. */
 export class AuthCancelled extends Error {}
 
-const MESSAGES: Record<string, string> = {
-  'auth/invalid-credential': 'Incorrect email or password.',
-  'auth/wrong-password': 'Incorrect email or password.',
-  'auth/user-not-found': 'Incorrect email or password.',
-  'auth/invalid-email': 'Enter a valid email address.',
-  'auth/email-already-in-use': 'An account with this email already exists. Log in instead.',
-  'auth/weak-password': 'Use a password of at least 8 characters.',
-  'auth/too-many-requests': 'Too many attempts. Wait a few minutes and try again.',
-  'auth/user-disabled': 'This account has been disabled. Please contact the gym desk.',
-  'auth/network-request-failed': "Can't reach the server. Check your internet connection and try again.",
-  'auth/operation-not-allowed': 'This way of signing in is not available yet.',
+const MESSAGE_KEY: Record<string, Key> = {
+  'auth/invalid-credential': 'acc.auth.wrongLogin',
+  'auth/wrong-password': 'acc.auth.wrongLogin',
+  'auth/user-not-found': 'acc.auth.wrongLogin',
+  'auth/invalid-email': 'acc.auth.invalidEmail',
+  'auth/email-already-in-use': 'acc.auth.emailInUse',
+  'auth/weak-password': 'acc.auth.weakPassword',
+  'auth/too-many-requests': 'acc.auth.tooMany',
+  'auth/user-disabled': 'acc.auth.disabled',
+  'auth/network-request-failed': 'acc.noServer',
+  'auth/operation-not-allowed': 'acc.auth.notAllowed',
 };
 
 function toAuthError(e: unknown) {
   const code = (e as { code?: string }).code ?? '';
-  return new AuthError(MESSAGES[code] ?? 'Something went wrong. Please try again.');
+  return new AuthError(tr(MESSAGE_KEY[code] ?? 'acc.wrong'));
 }
 
 function providerOf(user: FirebaseUser): AuthProvider {
@@ -71,7 +75,7 @@ function photoOf(user: FirebaseUser): string | null {
 /** The app's own shape of the signed-in member. */
 export function toUser(user: FirebaseUser): User {
   const email = user.email ?? '';
-  const fallback = email.split('@')[0] || 'Athlete';
+  const fallback = email.split('@')[0] || tr('activity.very_active');
   return {
     id: user.uid,
     name: user.displayName?.trim() || fallback.charAt(0).toUpperCase() + fallback.slice(1),
@@ -105,10 +109,47 @@ export async function signInWithGoogle(): Promise<void> {
   if (result.type === 'error') throw new AuthError(result.message);
 }
 
+/** The Apple module is native: an app build made before it was added does not have it. */
+function loadApple() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return { Apple: require('expo-apple-authentication') as typeof import('expo-apple-authentication'), Crypto: require('expo-crypto') as typeof import('expo-crypto') };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Sign in with Apple (iPhone). Apple's rules ask for it wherever another social sign-in is offered. A random
+ * one-time value (a nonce) is made on the phone; Apple gets its fingerprint, Firebase gets the original, so
+ * Firebase can check the answer really answers this request.
+ */
 export async function signInWithApple(): Promise<void> {
-  // TODO: needs an Apple Developer account, "Sign in with Apple" enabled for this app and for
-  // Firebase (Authentication → Sign-in method → Apple), and `expo-apple-authentication`.
-  throw new AuthError('Apple sign-in is not available yet. Please use your email and password.');
+  const tools = loadApple();
+  if (!tools || !(await tools.Apple.isAvailableAsync().catch(() => false)))
+    throw new AuthError(tr('acc.auth.appleUnavailable'));
+  const { Apple, Crypto } = tools;
+  const rawNonce = `${Crypto.randomUUID()}${Crypto.randomUUID()}`;
+  const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+  let credential: import('expo-apple-authentication').AppleAuthenticationCredential;
+  try {
+    credential = await Apple.signInAsync({
+      requestedScopes: [Apple.AppleAuthenticationScope.FULL_NAME, Apple.AppleAuthenticationScope.EMAIL],
+      nonce: hashedNonce,
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'ERR_REQUEST_CANCELED') throw new AuthCancelled();
+    throw new AuthError(tr('acc.auth.appleFailed'));
+  }
+  if (!credential.identityToken) throw new AuthError(tr('acc.auth.appleNoToken'));
+  try {
+    const result = await signInWithCredential(auth, new OAuthProvider('apple.com').credential({ idToken: credential.identityToken, rawNonce }));
+    // Apple gives the name only the first time. Keep it, or the member would be nameless from then on.
+    const name = [credential.fullName?.givenName, credential.fullName?.familyName].filter(Boolean).join(' ');
+    if (name && !result.user.displayName) await updateProfile(result.user, { displayName: name });
+  } catch (e) {
+    throw toAuthError(e);
+  }
 }
 
 export async function signOutNow(): Promise<void> {
@@ -122,15 +163,13 @@ export async function signOutNow(): Promise<void> {
  */
 export async function deleteAccount(): Promise<void> {
   const user = auth.currentUser;
-  if (!user) throw new AuthError('You are not signed in.');
+  if (!user) throw new AuthError(tr('acc.auth.notSignedIn'));
   await deleteAccountData();
   try {
     await deleteUser(user);
   } catch (e) {
     if ((e as { code?: string }).code === 'auth/requires-recent-login') {
-      throw new AuthError(
-        'For your security, log out and log in again, then delete your account. Your data has already been erased.'
-      );
+      throw new AuthError(tr('acc.auth.recentLogin'));
     }
     throw toAuthError(e);
   }

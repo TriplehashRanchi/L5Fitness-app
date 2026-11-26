@@ -2,6 +2,7 @@ import type { Workout, CoachingStatus } from '@/lib/fitness-api';
 /** Profile, weight, workout history, diet plans and the dietitian tools (all from L5Fitness-api). */
 import type { Activity, DietType, Goal, Sex } from '@/lib/body';
 import { api } from '@/lib/http';
+import type { Key } from '@/lib/i18n';
 
 export type BodyProfile = {
   goal: Goal;
@@ -17,7 +18,23 @@ export type BodyProfile = {
   allergies: string | null;
   medicalNotes: string | null;
   shareWithDietitian: boolean;
+  // Health screening. null = not answered (unknown, never "no").
+  takesMedication: boolean | null;
+  pregnancyStatus: PregnancyStatus | null;
+  hasInjury: boolean | null;
+  injuryNotes: string | null;
+  hasRestriction: boolean | null;
+  restrictionNotes: string | null;
+  screeningReviewedAt: string | null;
+  /** How they eat: a fasting pattern, and whether they work night shifts. null = not answered. */
+  fasting: Fasting | null;
+  shiftWork: boolean | null;
+  /** Why a dietitian has to look at the answers before prescribing; empty when nothing needs a look. Set by the server. */
+  reviewReasons: string[];
 };
+
+export type PregnancyStatus = 'no' | 'pregnant' | 'breastfeeding';
+export type Fasting = 'none' | 'ekadashi' | 'ramadan' | 'weekly' | 'intermittent' | 'other';
 
 export type WeightEntry = { id: string; weightKg: number; day: string };
 export type Role = 'member' | 'dietitian' | 'admin';
@@ -31,7 +48,7 @@ export type ProfileState = {
 };
 
 /** What the setup form sends. `day` is the phone's calendar day. */
-export type ProfileInput = Omit<BodyProfile, 'age' | 'startWeightKg'> & { day: string };
+export type ProfileInput = Omit<BodyProfile, 'age' | 'startWeightKg' | 'screeningReviewedAt' | 'reviewReasons'> & { day: string };
 
 export const finishSetup = () => api<ProfileState>('/me/onboarding/complete', { method: 'POST' });
 export const getProfile = () => api<ProfileState>('/me/profile');
@@ -56,12 +73,13 @@ export const getHistory = (before?: string) =>
 
 export type MealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner' | 'supplement';
 export const SLOT_ORDER: MealSlot[] = ['breakfast', 'lunch', 'snack', 'dinner', 'supplement'];
-export const SLOT_LABEL: Record<MealSlot, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  snack: 'Snack',
-  dinner: 'Dinner',
-  supplement: 'Supplement',
+/** The words for each meal: show them with `t(SLOT_KEY[slot])`. */
+export const SLOT_KEY: Record<MealSlot, Key> = {
+  breakfast: 'meal.breakfast',
+  lunch: 'meal.lunch',
+  snack: 'meal.snack',
+  dinner: 'meal.dinner',
+  supplement: 'prof.slot.supplement',
 };
 
 export type DietItem = {
@@ -101,9 +119,15 @@ export type ClientSummary = {
   targetWeightKg: number;
   planned7: number;
   done7: number;
+  pauseStatus: PauseStatus | null;
+  needsReview: boolean;
+  /** Where they are in their journey (new, active, at_risk…), and how many cases need a person. */
+  lifecycle: string | null;
+  openCases: number;
 };
 
 export type ClientDetail = {
+  pause: Pause | null;
   client: { id: string; name?: string; email?: string; image?: string | null };
   profile: BodyProfile;
   weightHistory: WeightEntry[];
@@ -146,3 +170,34 @@ export const getClientTargets = (id: string) =>
   api<{ targets: ClientTargets }>(`/dietitian/clients/${encodeURIComponent(id)}/targets`);
 export const saveClientTargets = (id: string, targets: ClientTargets) =>
   api<{ targets: ClientTargets }>(`/dietitian/clients/${encodeURIComponent(id)}/targets`, { method: 'PUT', body: { targets } });
+
+// ── Clinical pause ───────────────────────────────────────────────────────────────────────────
+
+export type PauseReason = 'illness' | 'injury' | 'clinician' | 'other';
+export type PauseStatus = 'paused' | 'restart_requested';
+export type Pause = {
+  id: string;
+  reason: PauseReason;
+  note: string | null;
+  status: PauseStatus;
+  startedAt: string;
+  restartRequestedAt: string | null;
+};
+
+export const PAUSE_REASON_KEY: Record<PauseReason, Key> = {
+  illness: 'prof.reason.illness',
+  injury: 'prof.reason.injury',
+  clinician: 'prof.reason.clinician',
+  other: 'eating.other',
+};
+
+export const getPause = () => api<{ pause: Pause | null }>('/me/pause');
+export const startPause = (reason: PauseReason, note?: string) =>
+  api<{ pause: Pause }>('/me/pause', { method: 'POST', body: { reason, note: note?.trim() || undefined } });
+export const requestRestart = () => api<{ pause: Pause }>('/me/pause/restart', { method: 'POST' });
+
+export const pauseClient = (id: string, reason: PauseReason, note?: string) =>
+  api<{ pause: Pause }>(`/dietitian/clients/${encodeURIComponent(id)}/pause`, { method: 'POST', body: { reason, note: note?.trim() || undefined } });
+export const resumeClient = (id: string) => api(`/dietitian/clients/${encodeURIComponent(id)}/resume`, { method: 'POST' });
+export const reviewScreening = (id: string) =>
+  api<{ profile: BodyProfile }>(`/dietitian/clients/${encodeURIComponent(id)}/screening/review`, { method: 'POST' });

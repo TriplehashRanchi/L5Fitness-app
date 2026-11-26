@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { msUntilNextMinute, validLocale, validTimeZone, type FormatOptions } from '@/lib/datetime';
+import { useLanguage } from '@/providers/language-provider';
 
 /**
  * The user's current time plus the phone's date/time settings.
@@ -18,6 +19,7 @@ export function useDeviceClock() {
   const [calendar] = useCalendars();
   const [locale] = useLocales();
   const [now, setNow] = useState(() => new Date());
+  const { language } = useLanguage();
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -46,8 +48,8 @@ export function useDeviceClock() {
     validTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
   const format: FormatOptions = {
-    // The UI text is English, but dates and times follow the user's region (en-IN, en-US, en-GB…).
-    locale: locale?.regionCode ? validLocale(`en-${locale.regionCode}`) : 'en',
+    // Day and month names follow the app's language. In English they follow the user's region (en-IN, en-US…).
+    locale: language !== 'en' ? validLocale(`${language}-IN`) : locale?.regionCode ? validLocale(`en-${locale.regionCode}`) : 'en',
     timeZone,
     hour12: calendar?.uses24hourClock == null ? undefined : !calendar.uses24hourClock,
   };

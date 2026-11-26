@@ -9,13 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { categoryIcon, iconFor } from '@/constants/icons';
 import {
-  LEVEL_LABEL,
+  LEVEL_LABEL_KEY,
   listCategories,
   listWorkouts,
   type Category,
   type Workout,
 } from '@/lib/fitness-api';
 import { messageFrom } from '@/lib/http';
+import { useLanguage } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
 const MUTED = '#8fa396';
@@ -24,6 +25,7 @@ const MUTED = '#8fa396';
 const TILE_STYLE = [{ bg: 'bg-card', fg: BRAND }];
 
 export default function ExploreScreen() {
+  const { language, t } = useLanguage();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -56,7 +58,7 @@ export default function ExploreScreen() {
   const all = workouts ?? [];
   const results = q
     ? all.filter((w) =>
-        `${w.title} ${w.focus ?? ''} ${LEVEL_LABEL[w.level]} ${categoryName(w.category)}`
+        `${w.title} ${w.focus ?? ''} ${t(LEVEL_LABEL_KEY[w.level])} ${categoryName(w.category)}`
           .toLowerCase()
           .includes(q)
       )
@@ -84,12 +86,12 @@ export default function ExploreScreen() {
             onPress={() => router.back()}
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="Back"
+            accessibilityLabel={t('common.back')}
             className="mb-4 h-10 w-10 items-center justify-center rounded-full bg-card active:opacity-70">
             <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={16} tintColor="white" />
           </Pressable>
-          <DisplayText accessibilityRole="header" className="text-[30px] font-bold tracking-tight text-white">Find your workout</DisplayText>
-          <Text className="mt-2 text-sm leading-5 text-muted">A little movement. A stronger you.</Text>
+          <DisplayText accessibilityRole="header" className="text-[30px] font-bold tracking-tight text-white">{t('acc.findWorkout')}</DisplayText>
+          <Text className="mt-2 text-sm leading-5 text-muted">{t('acc.findSub')}</Text>
 
           {/* Search */}
           <View className="mt-5 h-14 flex-row items-center gap-3 rounded-2xl border border-white/10 bg-card px-5">
@@ -101,18 +103,18 @@ export default function ExploreScreen() {
             <TextInput
               value={query}
               onChangeText={setQuery}
-              placeholder="Search workouts, muscles…"
+              placeholder={t('acc.searchPlaceholder')}
               placeholderTextColor="#6f8577"
               selectionColor={BRAND}
               cursorColor={BRAND}
-              accessibilityLabel="Search workouts"
+              accessibilityLabel={t('acc.searchWorkouts')}
               returnKeyType="search"
               autoCorrect={false}
               maxFontSizeMultiplier={1.4}
               className="h-full flex-1 text-base text-white"
             />
             {query ? (
-              <Pressable hitSlop={10} onPress={() => setQuery('')} accessibilityLabel="Clear search">
+              <Pressable hitSlop={10} onPress={() => setQuery('')} accessibilityLabel={t('acc.clearSearch')}>
                 <SymbolView
                   name={{ ios: 'xmark.circle.fill', android: 'cancel', web: 'cancel' }}
                   size={18}
@@ -134,17 +136,18 @@ export default function ExploreScreen() {
         {/* Categories */}
         {!q && tiles.length > 0 ? (
           <View className="mt-7 px-5">
-            <Text className="mb-4 text-xl font-bold text-white">Categories</Text>
+            <Text className="mb-4 text-xl font-bold text-white">{t('acc.categories')}</Text>
             <View className="flex-row flex-wrap justify-between gap-y-3">
               {tiles.map((c, i) => {
                 const { bg, fg } = TILE_STYLE[i % TILE_STYLE.length];
+                const count = t(c.count === 1 ? 'acc.workoutsOne' : 'acc.workoutsMany', { n: c.count });
                 return (
                   <Pressable
                     key={c.slug}
                     // Tapping a category searches for it.
                     onPress={() => setQuery(c.name)}
                     accessibilityRole="button"
-                    accessibilityLabel={`${c.name}, ${c.count} ${c.count === 1 ? 'workout' : 'workouts'}`}
+                    accessibilityLabel={`${c.name}, ${count}`}
                     className={`w-[48.5%] overflow-hidden rounded-2xl border border-white/5 p-4 active:opacity-80 ${bg}`}
                     style={{ minHeight: 132 }}>
                     <SymbolView name={categoryIcon(c.slug)} size={24} tintColor={fg} />
@@ -156,7 +159,7 @@ export default function ExploreScreen() {
                         {c.name}
                       </Text>
                       <Text maxFontSizeMultiplier={1.3} className="text-xs font-semibold" style={{ color: MUTED }}>
-                        {c.count} {c.count === 1 ? 'workout' : 'workouts'}
+                        {count}
                       </Text>
                     </View>
                   </Pressable>
@@ -169,25 +172,27 @@ export default function ExploreScreen() {
         {/* Workouts */}
         <View className="mt-8 px-5">
           <Text className="mb-4 text-xl font-bold text-white">
-            {q ? `Results (${results.length})` : 'All workouts'}
+            {q ? t('acc.results', { n: results.length }) : t('acc.allWorkouts')}
           </Text>
           <View className="gap-3">
             {results.map((w) => (
               <Pressable
                 key={w.id}
+                accessibilityRole="text"
+                accessibilityLabel={w.title}
                 className="flex-row items-center gap-4 rounded-2xl bg-card p-4 active:opacity-80">
                 <View className="h-14 w-14 items-center justify-center rounded-2xl bg-card-2">
                   <SymbolView name={iconFor(w.icon)} size={24} tintColor={BRAND} />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-base font-bold text-white" numberOfLines={1}>
+                  <Text className="text-base font-bold text-white" numberOfLines={2}>
                     {w.title}
                   </Text>
                   <Text className="mt-0.5 text-xs text-muted" numberOfLines={1}>
-                    {[`${w.durationMin} min`, w.focus].filter(Boolean).join(' · ')}
+                    {[t('acc.minutes', { n: w.durationMin }), w.focus].filter(Boolean).join(' · ')}
                   </Text>
-                  <Text maxFontSizeMultiplier={1.3} className="mt-1.5 text-[11px] font-bold uppercase tracking-wider text-brand">
-                    {LEVEL_LABEL[w.level]}
+                  <Text maxFontSizeMultiplier={1.3} className={`mt-1.5 text-[11px] font-bold uppercase text-brand ${language === 'en' ? 'tracking-wider' : ''}`}>
+                    {t(LEVEL_LABEL_KEY[w.level])}
                   </Text>
                 </View>
                 <SymbolView
@@ -198,12 +203,12 @@ export default function ExploreScreen() {
               </Pressable>
             ))}
             {workouts === null && !error ? (
-              <Text className="py-6 text-center text-sm text-muted">Loading workouts…</Text>
+              <Text className="py-6 text-center text-sm text-muted">{t('acc.loadingWorkouts')}</Text>
             ) : null}
             {workouts !== null && results.length === 0 ? (
               <View className="items-center rounded-2xl bg-card px-6 py-10">
-                <Text className="text-base font-bold text-white">No workouts found</Text>
-                <Text className="mt-1 text-center text-sm text-muted">Try another word, like “yoga” or “HIIT”.</Text>
+                <Text className="text-center text-base font-bold text-white">{t('acc.noWorkouts')}</Text>
+                <Text className="mt-1 text-center text-sm text-muted">{t('acc.tryWord')}</Text>
               </View>
             ) : null}
           </View>
