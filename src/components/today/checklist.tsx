@@ -4,9 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
-import { BodyAvatar } from '@/components/body-avatar';
 import { CompleteProfileButton, DIET_AFTER_PROFILE_KEY } from '@/components/complete-profile-button';
-import { bmi } from '@/lib/body';
+import { WaterOrb } from '@/components/today/water-orb';
 import { dayCounts } from '@/lib/day-plan';
 import { MEAL_LABEL_KEY, type DayItem, type MealType, type MyDay } from '@/lib/fitness-api';
 import { splitHighlight } from '@/lib/i18n';
@@ -15,7 +14,6 @@ import { calorieSummary, nextTask } from '@/lib/today-tasks';
 import { formatWater } from '@/lib/water';
 import { SLOT_KEY, SLOT_ORDER } from '@/lib/wellness-api';
 import { useLanguage, useT } from '@/providers/language-provider';
-import { useProfile } from '@/providers/profile-provider';
 
 const BRAND = '#3ddc68';
 const INK = '#050a07';
@@ -26,7 +24,6 @@ const MEALS = '#fb923c';
 const HAIRLINE = 'rgba(255,255,255,0.07)';
 const TRACK = 'rgba(255,255,255,0.08)';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
-const GLASS_ML = 250;
 const PHOTO_TYPES: MealType[] = ['breakfast', 'lunch', 'snack', 'dinner'];
 
 type Part = 'workout' | 'meals' | 'photos' | 'water' | 'steps';
@@ -293,21 +290,6 @@ function MealsSection({
   );
 }
 
-/** One line of the water explanation: what the number is, then the number. */
-function WaterFact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  const indic = useLanguage().language !== 'en';
-  return (
-    <View accessible accessibilityLabel={`${label}: ${value}`}>
-      <Text {...COMPACT_TEXT} className="font-bold uppercase text-muted" style={{ fontSize: indic ? 11 : 10, letterSpacing: indic ? 0 : 1.1 }}>
-        {label}
-      </Text>
-      <Text {...COMPACT_TEXT} numberOfLines={indic ? 2 : 1} adjustsFontSizeToFit className="font-bold" style={{ fontSize: strong ? 28 : 17, lineHeight: strong ? 34 : indic ? 25 : 23, color: strong ? WATER : '#ffffff' }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 function WaterSection({
   day,
   busy,
@@ -325,11 +307,6 @@ function WaterSection({
   const { totalMl, goalMl } = day.water;
   const hasGoal = goalMl > 0;
   const done = hasGoal && totalMl >= goalMl;
-  const left = Math.max(0, goalMl - totalMl);
-  const glassesLeft = Math.ceil(left / GLASS_ML);
-  const percent = hasGoal ? Math.min(100, Math.round((totalMl / goalMl) * 100)) : 0;
-  const { profile } = useProfile();
-  const bmiValue = profile?.weightKg && profile?.heightCm ? bmi(profile.weightKg, profile.heightCm) : null;
   return (
     <Section
       part="water"
@@ -338,72 +315,7 @@ function WaterSection({
       title={t('hm.water')}
       status={hasGoal ? t('hm.xOfY', { done: formatWater(totalMl), total: formatWater(goalMl) }) : formatWater(totalMl)}
       done={done}>
-      {/* The same body as on Home: it fills from the feet up as the day's water goal fills. */}
-      <View className="flex-row items-center" style={{ gap: 16 }}>
-        <BodyAvatar
-          bmi={bmiValue}
-          sex={profile?.sex}
-          fill={hasGoal ? Math.min(1, totalMl / goalMl) : 0}
-          color="#38e1f5"
-          height={230}
-          maxWidth={130}
-          label={t('hm.bodyFilledA11y', { percent })}
-        />
-        <View className="flex-1" style={{ gap: 12 }}>
-          <WaterFact strong label={t('hm.drunk')} value={formatWater(totalMl)} />
-          {hasGoal ? (
-            <>
-              <WaterFact label={t('hm.dayGoal')} value={formatWater(goalMl)} />
-              <WaterFact label={done ? t('hm.goalReached') : t('hm.stillToDrink')} value={done ? `${percent}%` : t(glassesLeft === 1 ? 'hm.leftGlassOne' : 'hm.leftGlassMany', { water: formatWater(left), n: glassesLeft })} />
-            </>
-          ) : null}
-          <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12, lineHeight: 17 }}>
-            {done ? t('hm.bodyFull') : t('hm.bodyFills')}
-          </Text>
-        </View>
-      </View>
-      {onDrink ? (
-        <>
-      <View className="flex-row items-center" style={{ gap: 8, marginTop: 16 }}>
-        <Pressable
-          onPress={() => onDrink?.(GLASS_ML)}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel={t('hm.addWaterA11y', { ml: GLASS_ML })}
-          className="flex-1 flex-row items-center justify-center rounded-full active:opacity-80"
-          style={{ gap: 6, minHeight: 48, backgroundColor: WATER, opacity: busy ? 0.6 : 1 }}>
-          <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} tintColor={INK} size={13} />
-          <Text {...COMPACT_TEXT} className="font-black text-ink" style={{ fontSize: 15 }}>
-            {t('hm.oneGlass')}
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => onDrink?.(500)}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityLabel={t('hm.addWaterA11y', { ml: 500 })}
-          className="items-center justify-center rounded-full bg-card-2 active:opacity-70"
-          style={{ minHeight: 48, paddingHorizontal: 18, opacity: busy ? 0.6 : 1 }}>
-          <Text {...COMPACT_TEXT} className="font-bold" style={{ fontSize: 14, color: WATER }}>
-            +500 ml
-          </Text>
-        </Pressable>
-        {lastDrinkMl ? (
-          <Pressable
-            onPress={onUndo}
-            disabled={busy}
-            accessibilityRole="button"
-            accessibilityLabel={t('hm.undoLastMl', { ml: lastDrinkMl })}
-            className="items-center justify-center rounded-full bg-card-2 active:opacity-70"
-            style={{ minHeight: 48, paddingHorizontal: 16, opacity: busy ? 0.6 : 1 }}>
-            <Text {...COMPACT_TEXT} className="font-bold text-muted" style={{ fontSize: 14 }}>
-              {t('hm.undo')}
-            </Text>
-          </Pressable>
-        ) : null}
-      </View>
-        </>
-      ) : null}
+      <WaterOrb totalMl={totalMl} goalMl={goalMl} busy={busy} lastDrinkMl={lastDrinkMl} onDrink={onDrink} onUndo={onUndo} />
     </Section>
   );
 }

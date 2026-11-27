@@ -1,14 +1,11 @@
-import { useState } from 'react';
 import { Text, View } from 'react-native';
-import Svg, { Circle, Defs, Line, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 
 import { DisplayText } from '@/components/display-text';
 import { fmtKg } from '@/lib/body';
-import type { WeightEntry } from '@/lib/wellness-api';
 import { useT } from '@/providers/language-provider';
 
 const BRAND = '#3ddc68';
-const MUTED = '#8fa396';
 const TRACK = 'rgba(255,255,255,0.08)';
 const COMPACT_TEXT = { maxFontSizeMultiplier: 1.3 } as const;
 
@@ -52,108 +49,6 @@ export function WeightRing({ weightKg, progress }: { weightKg: number; progress:
       <Text {...COMPACT_TEXT} className="font-semibold text-muted" style={{ fontSize: 14 }}>
         {t('prof.ring.now')}
       </Text>
-    </View>
-  );
-}
-
-/** "2026-11-18" → "18 Nov". */
-function shortDay(day: string, locale: string) {
-  try {
-    return new Date(`${day}T12:00:00Z`).toLocaleDateString(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' });
-  } catch {
-    return day;
-  }
-}
-
-/**
- * The recent weigh-ins as a line, oldest on the left, with the target as a dashed line.
- * The scale runs from just under the lowest value to just over the highest, so small changes show.
- */
-export function WeightTrend({ history, targetKg, locale, max = 12 }: { history: WeightEntry[]; targetKg: number; locale: string; max?: number }) {
-  const [width, setWidth] = useState(0);
-  const entries = history.slice(0, max).reverse(); // newest first → oldest first
-  const t = useT();
-  if (entries.length < 2) {
-    return (
-      <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
-        {t('prof.trend.empty')}
-      </Text>
-    );
-  }
-  const H = 132;
-  const PAD_X = 10;
-  const PAD_TOP = 26;
-  const PAD_BOTTOM = 10;
-  const values = entries.map((e) => e.weightKg);
-  const low = Math.min(...values, targetKg);
-  const high = Math.max(...values, targetKg);
-  const span = Math.max(high - low, 1);
-  const x = (i: number) => PAD_X + (i / (entries.length - 1)) * (width - PAD_X * 2);
-  const y = (kg: number) => PAD_TOP + (1 - (kg - low) / span) * (H - PAD_TOP - PAD_BOTTOM);
-
-  // A soft curve through the points: each segment bends at the midpoint between two weigh-ins.
-  let line = `M ${x(0)} ${y(values[0])}`;
-  for (let i = 1; i < values.length; i += 1) {
-    const mid = (x(i - 1) + x(i)) / 2;
-    line += ` C ${mid} ${y(values[i - 1])} ${mid} ${y(values[i])} ${x(i)} ${y(values[i])}`;
-  }
-  const area = `${line} L ${x(values.length - 1)} ${H} L ${x(0)} ${H} Z`;
-  const last = values.length - 1;
-  const first = entries[0];
-  const latest = entries[last];
-
-  return (
-    <View
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={t('prof.trend.label', {
-        from: shortDay(first.day, locale),
-        to: shortDay(latest.day, locale),
-        fromKg: fmtKg(first.weightKg),
-        toKg: fmtKg(latest.weightKg),
-        target: fmtKg(targetKg),
-      })}
-      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-      <View style={{ height: H }}>
-        {width > 0 ? (
-          <>
-            <Svg width={width} height={H}>
-              <Defs>
-                <LinearGradient id="weight-fill" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={BRAND} stopOpacity={0.28} />
-                  <Stop offset="1" stopColor={BRAND} stopOpacity={0} />
-                </LinearGradient>
-              </Defs>
-              <Line x1={0} x2={width} y1={y(targetKg)} y2={y(targetKg)} stroke={MUTED} strokeWidth={1} strokeDasharray="4 5" opacity={0.7} />
-              <Path d={area} fill="url(#weight-fill)" />
-              <Path d={line} stroke={BRAND} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              {values.map((v, i) =>
-                i === last ? null : <Circle key={entries[i].id} cx={x(i)} cy={y(v)} r={3} fill="#000000" stroke={BRAND} strokeWidth={2} />
-              )}
-              <Circle cx={x(last)} cy={y(values[last])} r={9} fill={BRAND} opacity={0.25} />
-              <Circle cx={x(last)} cy={y(values[last])} r={5} fill={BRAND} />
-            </Svg>
-            {/* The latest value, written above its dot. */}
-            <Text
-              {...COMPACT_TEXT}
-              className="absolute font-bold text-brand"
-              style={{ fontSize: 13, right: 0, top: Math.max(0, y(values[last]) - 26) }}>
-              {num(values[last])}
-            </Text>
-            <Text {...COMPACT_TEXT} className="absolute text-muted" style={{ fontSize: 11, left: 0, top: Math.max(0, y(targetKg) - 16) }}>
-              {t('prof.trend.target', { kg: num(targetKg) })}
-            </Text>
-          </>
-        ) : null}
-      </View>
-      <View className="flex-row justify-between" style={{ marginTop: 6 }}>
-        <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12 }}>
-          {shortDay(first.day, locale)}
-        </Text>
-        <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 12 }}>
-          {shortDay(latest.day, locale)}
-        </Text>
-      </View>
     </View>
   );
 }

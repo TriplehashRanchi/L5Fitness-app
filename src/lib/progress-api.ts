@@ -1,3 +1,5 @@
+import { Linking } from 'react-native';
+
 import { API_URL, api } from '@/lib/http';
 import type { Key } from '@/lib/i18n';
 import { sendOrQueue } from '@/lib/outbox';
@@ -103,6 +105,45 @@ export const getSummaries = () => api<{ started: string | null; summaries: Summa
 export async function summaryUrl(days: number) {
   const { url } = await api<{ url: string }>(`/me/summaries/${days}/link`, { method: 'POST' });
   return `${API_URL}${url}`;
+}
+
+/** Everything one report shows (the same figures as its PDF). Numbers nobody logged are null. */
+export type Report = {
+  days: number;
+  dayNumber: number;
+  start: string;
+  end: string;
+  goal: 'lose' | 'gain' | 'maintain' | null;
+  weight: {
+    start: number | null;
+    current: number | null;
+    target: number | null;
+    change: number | null;
+    remaining: number | null;
+    percent: number | null;
+    reached: boolean;
+    perWeek: number | null;
+    weighIns: number;
+  };
+  waist: { first: number | null; last: number | null; readings: number };
+  bmi: { start: number | null; current: number | null };
+  habits: {
+    water: { days: number; met: number; avgMl: number | null; goalMl: number };
+    steps: { days: number; met: number; goal: number };
+    mealDays: number;
+  };
+  adherence: { agreed: { completed: number; total: number }; agreedPercent: number | null; plan: { planned: number; done: number } };
+  wellbeing: { checkins: number; sleepHours: number | null; energy: number | null; hunger: number | null; stress: number | null } | null;
+  weeks: { weekStart: string; weight: number | null; steps: number | null; checkins: number; completed: number; total: number; mealPercent: number | null }[];
+  selfReported: Measure[];
+  clinician: Measure[];
+  deviceDerived: { stepDays: number; avgSteps: number | null };
+  reviews: { weekStart: string; barriers: string | null; coachFeedback: string | null }[];
+};
+export const getReport = (days: number) => api<{ report: Report }>(`/me/summaries/${days}`);
+/** Saves the PDF: the phone's browser downloads a file the server marks as a download. */
+export async function downloadSummary(days: number) {
+  await Linking.openURL(`${await summaryUrl(days)}&download=1`);
 }
 
 // ── Reminders ────────────────────────────────────────────────────────────────────────────────

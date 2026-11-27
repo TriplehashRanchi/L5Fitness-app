@@ -13,7 +13,7 @@ import { Avatar } from '@/components/avatar';
 import { ConfirmSheet } from '@/components/confirm-sheet';
 import { PauseSheet } from '@/components/pause-sheet';
 import { WeekStrip } from '@/components/week-strip';
-import { WeightBars } from '@/components/weight-bars';
+import { WeightChart } from '@/components/weight-chart';
 import { useDeviceClock } from '@/hooks/use-device-clock';
 import {
   ACTIVITY_KEY,
@@ -341,7 +341,7 @@ export default function ClientScreen() {
 
               <View className="mx-5 mt-5 rounded-3xl border border-white/5 bg-card p-5">
                 <Text className="mb-4 text-base font-bold text-white">{t('care.clientWeightProgress')}</Text>
-                <WeightBars history={detail.weightHistory} />
+                <WeightChart history={detail.weightHistory} targetKg={p?.targetWeightKg} locale={format.locale} />
               </View>
 
               <View className="mx-5 mt-5 rounded-3xl border border-white/5 bg-card p-5">

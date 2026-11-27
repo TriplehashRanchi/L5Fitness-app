@@ -98,26 +98,48 @@ function ActionRow({ action, canTick, onTick, busy }: { action: WeekAction; canT
   );
 }
 
-/** Four weekly averages as bars; a week with no weigh-ins is an empty slot, not a zero. */
+/**
+ * Four weekly averages as bars; tapping one reads it out underneath. A week with no weigh-ins is an empty slot,
+ * not a zero.
+ */
 function TrendBars({ trend, locale }: { trend: WeekCard['weight']['trend']; locale: string }) {
-  const values = trend.map((t) => t.avg).filter((v): v is number => v != null);
+  const t = useT();
+  const [picked, setPicked] = useState<string | null>(null);
+  const values = trend.map((x) => x.avg).filter((v): v is number => v != null);
   if (values.length < 2) return null;
   const lo = Math.min(...values) - 1;
   const hi = Math.max(...values) + 1;
+  // Until one is tapped, the latest week with a weight is read.
+  const shown = trend.find((x) => x.weekStart === picked) ?? [...trend].reverse().find((x) => x.avg != null)!;
   return (
-    <View className="flex-row items-end" style={{ gap: 10, height: 88, marginTop: 14 }}>
-      {trend.map((t) => (
-        <View key={t.weekStart} className="flex-1 items-center justify-end" style={{ height: '100%' }}>
-          {t.avg == null ? (
-            <View style={{ width: '100%', height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)' }} />
-          ) : (
-            <View style={{ width: '100%', height: 14 + ((t.avg - lo) / Math.max(0.1, hi - lo)) * 60, borderRadius: 6, backgroundColor: BRAND }} />
-          )}
-          <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 10, marginTop: 4 }}>
-            {short(t.weekStart, locale)}
-          </Text>
-        </View>
-      ))}
+    <View style={{ marginTop: 14 }}>
+      <View className="flex-row items-end" style={{ gap: 10, height: 96 }}>
+        {trend.map((x) => {
+          const on = x.weekStart === shown.weekStart;
+          return (
+            <Pressable
+              key={x.weekStart}
+              onPress={() => setPicked(x.weekStart)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`${short(x.weekStart, locale)}: ${x.avg == null ? t('care.weekNotEnough') : fmtKg(x.avg)}`}
+              className="flex-1 items-center justify-end"
+              style={{ height: '100%' }}>
+              {x.avg == null ? (
+                <View style={{ width: '100%', height: 4, borderRadius: 2, backgroundColor: on ? '#ffffff' : 'rgba(255,255,255,0.1)' }} />
+              ) : (
+                <View style={{ width: '100%', height: 14 + ((x.avg - lo) / Math.max(0.1, hi - lo)) * 60, borderRadius: 6, backgroundColor: on ? BRAND : 'rgba(61,220,104,0.35)' }} />
+              )}
+              <Text {...COMPACT_TEXT} style={{ fontSize: 10, marginTop: 4, color: on ? '#ffffff' : MUTED, fontWeight: on ? '800' : '400' }}>
+                {short(x.weekStart, locale)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text {...COMPACT_TEXT} accessibilityLiveRegion="polite" className="text-center font-bold text-white" style={{ fontSize: 14, marginTop: 10 }}>
+        {short(shown.weekStart, locale)} · {shown.avg == null ? t('care.weekNotEnough') : fmtKg(shown.avg)} · {t('rep.weighIns', { n: shown.weighIns })}
+      </Text>
     </View>
   );
 }

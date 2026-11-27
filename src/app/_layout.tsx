@@ -111,6 +111,7 @@ function RootNavigator() {
             <Stack.Screen name="ai" options={{ animation: 'slide_from_bottom' }} /> {/* i18n-ignore: a route name */}
             <Stack.Screen name="add-meal" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} /> {/* i18n-ignore: a route name */}
             <Stack.Screen name="week" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
+            <Stack.Screen name="report/[days]" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
             <Stack.Screen name="calls" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
             <Stack.Screen name="check-in" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}
             <Stack.Screen name="community" options={{ animation: 'slide_from_right' }} /> {/* i18n-ignore: a route name */}

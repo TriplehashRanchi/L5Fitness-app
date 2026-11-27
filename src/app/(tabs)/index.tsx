@@ -19,6 +19,7 @@ import { OfferCard } from '@/components/offer-card';
 import { OutboxBanner } from '@/components/outbox-banner';
 import { PauseBanner } from '@/components/pause-banner';
 import { PlanHeroCard } from '@/components/plan-hero-card';
+import { StoryRow } from '@/components/story-row';
 import { todayProgress } from '@/components/today-card/plan-progress';
 import { ActiveWorkoutCard } from '@/components/active-workout/active-workout-card';
 import { SHOW_WORKOUT, TodayCardSkeleton, TodayPlanCard } from '@/components/today-plan-card';
@@ -358,6 +359,9 @@ export default function HomeScreen() {
           <StepsTile steps={steps.todaySteps} goal={stepGoal} locale={format.locale} onPress={() => router.push('/steps' as never)} />
           <GoalsTile percent={planPercent} />
         </View>
+
+        {/* Members' stories, opened like a status, for everyone's motivation. */}
+        <StoryRow viewerId={userId ?? ''} refreshKey={String(refreshing)} />
 
         {/* Today's plan: the one card on Home, each part with its own quick action. */}
         {data ? (

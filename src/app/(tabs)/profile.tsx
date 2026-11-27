@@ -1,5 +1,7 @@
 import { DisplayText } from '@/components/display-text';
-import { BmiScale, WeightRing, WeightTrend } from '@/components/profile/weight-visuals';
+import { ProgressReports } from '@/components/profile/progress-reports';
+import { BmiScale, WeightRing } from '@/components/profile/weight-visuals';
+import { WeightChart } from '@/components/weight-chart';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
@@ -8,7 +10,6 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
-  Linking,
   Pressable,
   ScrollView,
   Text,
@@ -44,7 +45,6 @@ import { emergencyLine } from '@/lib/emergency';
 import { messageFrom } from '@/lib/http';
 import type { Translate } from '@/lib/i18n';
 import { requestCancel } from '@/lib/membership-api';
-import { summaryUrl } from '@/lib/progress-api';
 import { PAUSE_REASON_KEY, requestRestart, startPause, type BodyProfile, type PauseReason, type WeightEntry } from '@/lib/wellness-api';
 import { useAuth } from '@/providers/auth-provider';
 import { useProfile } from '@/providers/profile-provider';
@@ -262,20 +262,7 @@ export default function ProfileScreen() {
 
   // This week's agreed actions and the 30/60/90-day summaries.
   const todayKey = toDayKey(getZonedParts(new Date(), format.timeZone));
-  const { card: weekCard, summaries } = useWeek(todayKey);
-  const [openingSummary, setOpeningSummary] = useState<number | null>(null);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
-  const openSummary = async (days: number) => {
-    setOpeningSummary(days);
-    setSummaryError(null);
-    try {
-      await Linking.openURL(await summaryUrl(days));
-    } catch (e) {
-      setSummaryError(messageFrom(e));
-    } finally {
-      setOpeningSummary(null);
-    }
-  };
+  const { card: weekCard, summaries, started } = useWeek(todayKey);
 
   const doPause = async (reason: PauseReason, note: string) => {
     setPauseBusy(true);
@@ -595,11 +582,8 @@ export default function ProfileScreen() {
               </Card>
             ) : null}
 
-            <Card
-              icon={{ ios: 'chart.line.uptrend.xyaxis', android: 'show_chart', web: 'show_chart' }}
-              title={t('prof.trend.title')}
-              status={weightHistory.length > 1 ? t('prof.trend.count', { n: Math.min(12, weightHistory.length) }) : null}>
-              <WeightTrend history={weightHistory} targetKg={profile.targetWeightKg} locale={format.locale} />
+            <Card icon={{ ios: 'chart.line.uptrend.xyaxis', android: 'show_chart', web: 'show_chart' }} title={t('prof.trend.title')}>
+              <WeightChart history={weightHistory} targetKg={profile.targetWeightKg} locale={format.locale} />
             </Card>
 
             {bmiValue != null && band ? (
@@ -751,35 +735,12 @@ export default function ProfileScreen() {
             ) : null}
             {/* Day 30, 60 and 90 summaries, as PDFs. */}
             {role === 'member' && summaries.length ? (
-              <Card icon={{ ios: 'doc.text', android: 'description', web: 'description' }} title={t('profile.reports')}>
-                <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 14, lineHeight: 21 }}>
-                  {t('prof.reports.intro')}
-                </Text>
-                {summaries.map((s) => (
-                  <Pressable
-                    key={s.days}
-                    onPress={() => void openSummary(s.days)}
-                    disabled={!s.ready || openingSummary != null}
-                    accessibilityRole="button"
-                    accessibilityState={{ disabled: !s.ready }}
-                    className="flex-row items-center"
-                    style={{ gap: 12, minHeight: 54, borderTopWidth: 1, borderTopColor: HAIRLINE, marginTop: 4, opacity: s.ready ? 1 : 0.55 }}>
-                    <SymbolView name={{ ios: 'arrow.down.doc', android: 'download', web: 'download' }} tintColor={s.ready ? BRAND : MUTED} size={18} />
-                    <Text {...COMPACT_TEXT} className="flex-1 font-bold text-white" style={{ fontSize: 15 }}>
-                      {t('prof.reports.day', { n: s.days })}
-                    </Text>
-                    {openingSummary === s.days ? <ActivityIndicator color={BRAND} size="small" /> : (
-                      <Text {...COMPACT_TEXT} className="text-muted" style={{ fontSize: 13 }}>
-                        {s.ready ? t('prof.reports.open') : s.readyOn ? t('prof.reports.readyOn', { date: s.readyOn }) : t('prof.reports.afterStart')}
-                      </Text>
-                    )}
-                  </Pressable>
-                ))}
-                {summaryError ? (
-                  <Text accessibilityRole="alert" {...COMPACT_TEXT} className="mt-2 text-accent" style={{ fontSize: 13 }}>
-                    {summaryError}
-                  </Text>
-                ) : null}
+              <Card
+                icon={{ ios: 'doc.text', android: 'description', web: 'description' }}
+                title={t('profile.reports')}
+                status={t('prof.reports.count', { n: summaries.filter((s) => s.ready).length, total: summaries.length })}
+                statusColor={summaries.some((s) => s.ready) ? BRAND : MUTED}>
+                <ProgressReports started={started} summaries={summaries} todayKey={todayKey} locale={format.locale} />
               </Card>
             ) : null}
 

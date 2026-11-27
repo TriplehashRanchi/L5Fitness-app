@@ -7,6 +7,7 @@ import { getSummaries, getWeek, type SummaryState, type WeekCard } from '@/lib/p
 export function useWeek(today: string) {
   const [card, setCard] = useState<WeekCard | null>(null);
   const [summaries, setSummaries] = useState<SummaryState[]>([]);
+  const [started, setStarted] = useState<string | null>(null);
   useFocusEffect(
     useCallback(() => {
       let live = true;
@@ -14,12 +15,16 @@ export function useWeek(today: string) {
         .then((r) => live && setCard(r.card))
         .catch(() => {});
       getSummaries()
-        .then((r) => live && setSummaries(r.summaries))
+        .then((r) => {
+          if (!live) return;
+          setStarted(r.started);
+          setSummaries(r.summaries);
+        })
         .catch(() => {});
       return () => {
         live = false;
       };
     }, [today])
   );
-  return { card, summaries };
+  return { card, summaries, started };
 }
